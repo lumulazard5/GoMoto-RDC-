@@ -555,56 +555,67 @@ export default function App() {
                     {translations[language].appSubtitle}
                   </p>
                   {!user && (
-                     <div className="mt-6 max-w-md mx-auto space-y-4">
-                        <button onClick={loginWithGoogle} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-2xl shadow-xl transition-all w-full flex items-center justify-center gap-2">
-                          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                            <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.86-3.577-7.86-8s3.53-8 7.86-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C17.955 2.192 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c5.84 0 10.92-3.834 10.92-11.24 0-.768-.082-1.353-.183-1.955H12.24z"/>
-                          </svg>
-                          <span>Commencer (Connexion Google)</span>
-                        </button>
+                     <div className="mt-6 max-w-md mx-auto space-y-6">
+                        {/* Option 1: Official Google OAuth Auth */}
+                        <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-sm text-left">
+                          <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-widest block mb-2.5">Option 1 : Authentification Google</span>
+                          <button onClick={loginWithGoogle} className="px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-2xl shadow-md hover:shadow-lg transition-all w-full flex items-center justify-center gap-2.5 cursor-pointer text-sm">
+                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                              <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.86-3.577-7.86-8s3.53-8 7.86-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C17.955 2.192 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c5.84 0 10.92-3.834 10.92-11.24 0-.768-.082-1.353-.183-1.955H12.24z"/>
+                            </svg>
+                            <span>Se connecter via Google</span>
+                          </button>
+                          <p className="text-[10px] text-slate-400 mt-2.5 leading-relaxed text-center">
+                            Nécessite d'être préalablement enregistré comme testeur officiel sur la console GCP Gomoto.
+                          </p>
+                        </div>
 
+                        {/* Option 2: Custom Instant Email Connection bypass */}
+                        <div className="bg-slate-900 text-white border border-slate-800 rounded-3xl p-5 shadow-xl text-left relative overflow-hidden">
+                          <div className="absolute top-0 right-0 bg-yellow-500 text-slate-950 font-black text-[8px] px-2.5 py-0.5 rounded-bl-lg uppercase tracking-widest">
+                            Recommandé RDC
+                          </div>
+                          
+                          <span className="text-[9.5px] font-black text-yellow-500 uppercase tracking-widest block mb-1">Option 2 : Connexion Immédiate (E-mail Sandbox)</span>
+                          <p className="text-[10px] text-slate-400 leading-normal mb-4">
+                            Si Google bloque la validation (<code className="bg-slate-950 px-1 rounded text-red-400 font-mono">Erreur 403 : access_denied</code>), connectez-vous directement ci-dessous sans approbation Google externe :
+                          </p>
 
-
-                        {showDevTools && (
-                          <div className="bg-amber-50/80 border border-amber-200/70 rounded-2xl p-4 text-left shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
-                            <h4 className="text-xs font-bold text-amber-800 flex items-center gap-1.5 mb-1.5">
-                              <AlertTriangle className="w-4 h-4 text-amber-600 animate-pulse" />
-                              <span>Résolution Google OAuth (Mode Testeur / Démo)</span>
-                            </h4>
-                            <p className="text-[11px] text-amber-700 leading-normal mb-3">
-                              Si Google bloque l'accès (<code className="bg-amber-100 px-1 rounded font-bold">Erreur 403 : access_denied</code>) car le domaine d'évaluation est en cours de vérification, connectez-vous immédiatement ici avec un e-mail homologué :
-                            </p>
-                            <form onSubmit={async (e) => {
-                              e.preventDefault();
-                              const formData = new FormData(e.currentTarget);
-                              const emailStr = formData.get("tester_email") as string;
-                              if (emailStr && emailStr.includes("@")) {
-                                try {
-                                  await loginWithTesterEmail(emailStr);
-                                } catch (err: any) {
-                                  alert("Échec de connexion testeur: " + err.message);
-                                }
-                              } else {
-                                alert("Veuillez entrer un e-mail valide.");
+                          <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            const emailStr = formData.get("tester_email") as string;
+                            if (emailStr && emailStr.includes("@")) {
+                              try {
+                                await loginWithTesterEmail(emailStr);
+                              } catch (err: any) {
+                                alert("Échec de connexion: " + err.message);
                               }
-                            }} className="flex gap-2">
+                            } else {
+                              alert("Veuillez entrer une adresse e-mail valide.");
+                            }
+                          }} className="flex flex-col gap-2.5">
+                            <div className="flex gap-2">
                               <input 
                                 type="email" 
                                 name="tester_email"
-                                placeholder="adresse-testeur@gmail.com" 
-                                className="flex-1 px-3 py-1.5 text-xs border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white text-slate-800 font-sans font-medium"
+                                placeholder="votre-adresse-email@gmail.com" 
+                                className="flex-1 px-3.5 py-2.5 text-xs border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-500 bg-slate-950 text-white font-sans font-medium"
                                 required
                                 defaultValue="lumulazard5@gmail.com"
                               />
                               <button 
                                 type="submit" 
-                                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-707 text-white text-xs font-bold uppercase rounded-xl transition-all"
+                                className="px-4 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-slate-950 text-xs font-black uppercase rounded-xl transition-all cursor-pointer shrink-0"
                               >
-                                Entrer
+                                Connecter
                               </button>
-                            </form>
-                            <div className="mt-2.5 pt-2 border-t border-amber-200/50 flex flex-wrap gap-1.5 items-center">
-                              <span className="text-[9.5px] text-amber-700 font-medium">Comptes d'accès rapide :</span>
+                            </div>
+                          </form>
+
+                          <div className="mt-4 pt-3.5 border-t border-slate-800/80">
+                            <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mb-2">Comptes d'accès rapide Admin :</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <button
                                 type="button"
                                 onClick={async () => {
@@ -614,10 +625,12 @@ export default function App() {
                                     alert(err.message);
                                   }
                                 }}
-                                className="px-2 py-0.5 border border-amber-300/50 hover:border-amber-400 bg-amber-100/50 rounded text-[10px] text-amber-800 font-bold transition-all cursor-pointer"
+                                className="px-3 py-2 border border-slate-800 hover:border-slate-700 bg-slate-950 rounded-xl text-[10.5px] text-yellow-500/90 hover:text-yellow-400 font-extrabold flex items-center justify-between transition-all cursor-pointer text-left"
                               >
-                                lumulazard5@gmail.com (ADMIN)
+                                <span>👤 Lazard Lumu</span>
+                                <span className="text-[7.5px] bg-yellow-500/10 text-yellow-500 px-1 py-0.5 rounded font-black font-mono">ADMIN</span>
                               </button>
+                              
                               <button
                                 type="button"
                                 onClick={async () => {
@@ -627,13 +640,14 @@ export default function App() {
                                     alert(err.message);
                                   }
                                 }}
-                                className="px-2 py-0.5 border border-amber-300/50 hover:border-amber-400 bg-amber-100/50 rounded text-[10px] text-amber-800 font-bold transition-all cursor-pointer"
+                                className="px-3 py-2 border border-slate-800 hover:border-slate-700 bg-slate-950 rounded-xl text-[10.5px] text-yellow-500/90 hover:text-yellow-400 font-extrabold flex items-center justify-between transition-all cursor-pointer text-left"
                               >
-                                aepisciculture@gmail.com (ADMIN)
+                                <span>👤 Pisciculture CD</span>
+                                <span className="text-[7.5px] bg-yellow-500/10 text-yellow-500 px-1 py-0.5 rounded font-black font-mono">ADMIN</span>
                               </button>
                             </div>
                           </div>
-                        )}
+                        </div>
                      </div>
                   )}
                 </div>

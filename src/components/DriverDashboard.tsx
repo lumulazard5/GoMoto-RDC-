@@ -77,6 +77,19 @@ export default function DriverDashboard({
   sosAlerts = [],
 }: DriverDashboardProps) {
   const [activeTab, setActiveTab] = useState<"courses" | "wallet" | "ratings" | "profile" | "badge" | "history" | "fiscalite">("courses");
+  const [localTime, setLocalTime] = useState<string>("");
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      // Congo time (Kinshasa UTC+1 / Lubumbashi UTC+2). Just display local format for the user
+      setLocalTime(now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [useGoogleMaps, setUseGoogleMaps] = useState<boolean>(() => {
     const saved = localStorage.getItem("gomoto_use_google_maps_driver");
     return saved === "true";
@@ -1589,160 +1602,238 @@ export default function DriverDashboard({
   };
 
   return (
-    <div id="driver-screen-container" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start max-w-7xl mx-auto">
+    <div id="driver-screen-container" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start max-w-7xl mx-auto font-sans">
       
-      {/* 2FA OTP Simulated SMS Banner Notification */}
-      {withdrawalOtpNotify && (
-        <div className="col-span-1 lg:col-span-12 bg-amber-950/80 border border-amber-500/30 p-4 rounded-3xl text-xs flex items-center gap-3 animate-bounce font-sans text-left shadow-xl text-amber-300">
-          <Smartphone className="w-5 h-5 text-amber-400 shrink-0 animate-pulse animate-bounce" />
-          <div className="flex-1">
-            <span className="font-extrabold block text-[8px] text-amber-500 uppercase font-mono tracking-widest">NOTIF DE TÉLÉPHONE MOTORISÉE (SMS D'ÉTAT RETRAIT) :</span>
-            <span className="font-semibold">{withdrawalOtpNotify}</span>
+      {/* 1. STATE-OF-THE-ART TOP HEADER MOBILITY HUD & NAVIGATION BAR */}
+      <div className="col-span-1 lg:col-span-12 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden text-left">
+        {/* Decorative ambient background blur vectors */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full filter blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 left-20 w-48 h-48 bg-blue-600/5 rounded-full filter blur-3xl pointer-events-none"></div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-800/80 pb-6 relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="relative shrink-0">
+              {profile.profilePicture ? (
+                <img referrerPolicy="no-referrer" src={profile.profilePicture} alt="Selfie Profile" className="h-16 w-16 rounded-2xl border-2 border-yellow-505 object-cover shadow-xl" />
+              ) : (
+                <div className="h-16 w-16 rounded-2xl bg-slate-950 border-2 border-slate-800 flex items-center justify-center text-yellow-505 shadow-xl">
+                  <User className="w-8 h-8" />
+                </div>
+              )}
+              {isOnline ? (
+                <span className="absolute -bottom-1 -right-1 h-4 w-4 bg-emerald-500 rounded-full border-2 border-slate-900 animate-pulse" title="En ligne" />
+              ) : (
+                <span className="absolute -bottom-1 -right-1 h-4 w-4 bg-amber-500 rounded-full border-2 border-slate-900" title="Hors ligne" />
+              )}
+            </div>
+            
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[8.5px] font-black tracking-widest bg-yellow-500/15 text-yellow-500 px-2 py-0.5 rounded-md uppercase">Espace Chauffeur GoMoto</span>
+                <span className="text-[8.5px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-850">Plaque: <b className="text-white">{profile.vehiclePlate || "C-MC-8841KIN"}</b></span>
+              </div>
+              <h1 className="text-xl font-black text-white mt-1 flex items-center gap-1.5">
+                <span>{profile.firstName} {profile.lastName}</span>
+                <CheckCircle className="w-5 h-5 text-yellow-500 fill-slate-950 shrink-0" />
+              </h1>
+              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                <MapPin className="w-4 h-4 text-slate-500 shrink-0" />
+                <span>Base : <b className="text-slate-300">{profile.address.commune}, {profile.address.city}</b></span>
+              </p>
+            </div>
           </div>
-          <button type="button" onClick={() => setWithdrawalOtpNotify(null)} className="text-amber-500 hover:text-amber-300 font-extrabold text-base px-1.5 rounded-full hover:bg-slate-800">×</button>
+
+          {/* Quick Stats Grid Header Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Live Clock HUD */}
+            <div className="bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-850/80 shadow-inner flex items-center gap-3">
+              <Clock className="w-5 h-5 text-yellow-500 shrink-0 animate-pulse" />
+              <div className="text-left">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block font-mono">Horloge RDC</span>
+                <span className="text-sm font-bold text-white block mt-0.5 font-mono">{localTime || "--:--:--"}</span>
+              </div>
+            </div>
+
+            {/* Micro Rating Summary */}
+            <div className="bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-850/80 shadow-inner flex items-center gap-3">
+              <Star className="w-5 h-5 text-yellow-500 fill-yellow-505 shrink-0" />
+              <div className="text-left">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Note Conducteur</span>
+                <span className="text-sm font-bold text-slate-205 block mt-0.5 font-mono">{profile.rating} / 5</span>
+              </div>
+            </div>
+
+            {/* Courses achieved */}
+            <div className="bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-850/80 shadow-inner flex items-center gap-3">
+              <TrendingUp className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div className="text-left">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Rendement</span>
+                <span className="text-sm font-bold text-slate-205 block mt-0.5 font-mono">{profile.ridesCompleted} Activées</span>
+              </div>
+            </div>
+
+            {/* Status Display Card */}
+            <div className="bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-850/80 shadow-inner flex items-center gap-3">
+              <Activity className="w-5 h-5 text-blue-400 shrink-0 animate-pulse" />
+              <div className="text-left">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Statut Actuel</span>
+                <span className={`text-[10px] font-extrabold block mt-1 ${isOnline ? "text-emerald-400 animate-pulse" : "text-amber-500"}`}>
+                  {isOnline ? "● EN SERVICE" : "○ HORS SERVICE"}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
-      
-      {/* LEFT COLUMN: Sidebar menu, navigation, status */}
+
+        {/* 2. MAJESTIC SEGMENTED TOP HORIZONTAL NAVIGATION BAR */}
+        <div className="flex flex-nowrap overflow-x-auto gap-2 mt-6 pb-2 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+          <button
+            type="button"
+            onClick={() => setActiveTab("courses")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "courses"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <Compass className="w-4 h-4 shrink-0" />
+            <span>Courses Actives</span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => setActiveTab("history")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "history"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <Clock className="w-4 h-4 shrink-0" />
+            <span>Historique courses</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("wallet")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "wallet"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <CreditCard className="w-4 h-4 shrink-0" />
+            <span>Portefeuille & Retrait</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("ratings")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "ratings"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <Star className="w-4 h-4 shrink-0" />
+            <span>Évaluations</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("profile")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "profile"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <User className="w-4 h-4 shrink-0" />
+            <span>Dossier d'Identité</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("badge")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "badge"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <Award className="w-4 h-4 shrink-0" />
+            <span>Badge Professionnel BD</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("fiscalite")}
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
+              activeTab === "fiscalite"
+                ? "bg-yellow-500 text-slate-950 shadow-lg font-black scale-[1.01]"
+                : "bg-slate-950 border border-slate-850 text-slate-400 hover:text-white hover:bg-slate-850"
+            }`}
+          >
+            <FileText className="w-4 h-4 shrink-0" />
+            <span>Fiscalité & Impôts RDC</span>
+          </button>
+        </div>
+      </div>
+
+      {/* LEFT COLUMN: Sidebar menu, connectivity, status */}
       <div className="lg:col-span-4 space-y-6">
         
         {/* Dynamic Partner profile overview */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl relative overflow-hidden">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl relative overflow-hidden text-left font-sans">
           <div className="absolute top-0 right-0 bg-yellow-500 text-slate-950 font-black text-[9px] px-3 py-1 rounded-bl-xl uppercase tracking-wider">
-            Chauffeur Actif
+            Mobilité & Gains
           </div>
 
-          <div className="flex items-center gap-4">
-            {profile.profilePicture ? (
-              <img referrerPolicy="no-referrer" src={profile.profilePicture} alt="Selfie Profile" className="h-14 w-14 rounded-full border border-yellow-500 object-cover" />
-            ) : (
-              <div className="h-14 w-14 rounded-full bg-slate-950 border border-slate-805 flex items-center justify-center text-yellow-500 font-bold">
-                <User className="w-6 h-6" />
+          <div className="space-y-4">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block border-b border-slate-800/60 pb-1.5">Commandes de Connexion</span>
+
+            {/* ONLINE/OFFLINE STATUS TRIGGER SWITCH */}
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-850/80 flex items-center justify-between">
+              <div>
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Présence Mobilité</span>
+                <span className={`text-xs font-black block mt-0.5 ${isOnline ? "text-emerald-400" : "text-amber-500"}`}>
+                  {isOnline ? "● EN LIGNE" : "○ HORS LIGNE"}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleToggleOnline}
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow ${
+                  isOnline ? "bg-red-500 hover:bg-red-400 text-white" : "bg-emerald-500 hover:bg-orange-400 text-slate-955"
+                }`}
+              >
+                {isOnline ? "Déconnecter" : "Se Connecter"}
+              </button>
+            </div>
+
+            {/* Presence selfie proof display */}
+            {isOnline && profile.onlineSelfieUrl && (
+              <div className="bg-slate-950 p-2.5 rounded-2xl border border-emerald-950/40 flex items-center gap-2.5">
+                <img referrerPolicy="no-referrer" src={profile.onlineSelfieUrl} alt="Selfie" className="h-9 w-9 rounded-full border border-emerald-400 object-cover shrink-0" />
+                <div>
+                  <span className="text-[8px] font-bold text-white block">Selfie de présence validé</span>
+                  <span className="text-[7.5px] text-slate-500 block">Comparaison faciale OK ({facialMatchScore > 0 ? `${facialMatchScore}%` : "98.4%"})</span>
+                </div>
               </div>
             )}
-            <div>
-              <h2 className="text-sm font-black text-slate-100 flex items-center gap-1.5">
-                <span>{profile.firstName} {profile.lastName}</span>
-                <CheckCircle className="w-3.5 h-3.5 text-yellow-500 fill-slate-950" />
-              </h2>
-              <p className="text-[10px] text-slate-400 mt-0.5">Moto N°: <span className="font-mono text-white">{profile.vehiclePlate || "C-MC-8841KIN"}</span></p>
-              
-              <div className="flex items-center gap-1.5 mt-1 border-t border-slate-800/60 pt-1">
-                <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
-                <span className="text-[10px] font-bold text-slate-300">{profile.rating}</span>
-                <span className="text-[10px] text-slate-500">• {profile.ridesCompleted} courses</span>
+
+            {/* Wallet displays */}
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850/80 text-left">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Gains CDF</span>
+                <span className="text-[12px] font-black text-emerald-400 block mt-1">{profile.walletBalanceCDF.toLocaleString("fr-FR")} CDF</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850/80 text-left">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Gains USD</span>
+                <span className="text-[12px] font-black text-yellow-500 block mt-1">${profile.walletBalanceUSD.toFixed(2)} USD</span>
               </div>
             </div>
-          </div>
-
-          {/* ONLINE/OFFLINE STATUS TRIGGER SWITCH */}
-          <div className="mt-5 p-3.5 rounded-2xl bg-slate-950 border border-slate-850 flex items-center justify-between">
-            <div>
-              <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Présence Mobilité</span>
-              <span className={`text-xs font-black block mt-0.5 ${isOnline ? "text-emerald-400" : "text-amber-500"}`}>
-                {isOnline ? "● EN LIGNE" : "○ HORS LIGNE"}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleToggleOnline}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                isOnline ? "bg-red-500 hover:bg-red-400 text-white" : "bg-emerald-500 hover:bg-emerald-400 text-slate-950"
-              }`}
-            >
-              {isOnline ? "Déconnecter" : "Se Connecter"}
-            </button>
-          </div>
-
-          {/* Presence selfie proof display */}
-          {isOnline && profile.onlineSelfieUrl && (
-            <div className="mt-3.5 bg-slate-950 p-2 rounded-2xl border border-emerald-950/40 flex items-center gap-2">
-              <img referrerPolicy="no-referrer" src={profile.onlineSelfieUrl} alt="Selfie" className="h-8 w-8 rounded-full border border-emerald-400 object-cover" />
-              <div>
-                <span className="text-[8px] font-bold text-white block"> selfie de présence validé</span>
-                <span className="text-[7.5px] text-slate-500 block">Comparaison faciale OK ({facialMatchScore > 0 ? `${facialMatchScore}%` : "98.4%"})</span>
-              </div>
-            </div>
-          )}
-
-          {/* Wallet displays */}
-          <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-800/60">
-            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850/80 text-center">
-              <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block">Gains CDF</span>
-              <span className="text-xs font-black text-emerald-400 block mt-0.5">{profile.walletBalanceCDF.toLocaleString("fr-FR")} CDF</span>
-            </div>
-            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850/80 text-center">
-              <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block">Gains USD</span>
-              <span className="text-xs font-black text-yellow-500 block mt-0.5">${profile.walletBalanceUSD.toFixed(2)} USD</span>
-            </div>
-          </div>
-
-          {/* Tab switches */}
-          <div className="flex flex-wrap gap-1 mt-5 bg-slate-950 p-1 rounded-xl border border-slate-850">
-            <button
-              type="button"
-              onClick={() => setActiveTab("courses")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "courses" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Courses
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("history")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "history" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Historique
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("wallet")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "wallet" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Wallet
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("ratings")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "ratings" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Évaluations
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("profile")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "profile" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Dossier
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("badge")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "badge" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Badge
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("fiscalite")}
-              className={`flex-1 text-center py-2.5 rounded-lg text-[9.5px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
-                activeTab === "fiscalite" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Fiscalité
-            </button>
           </div>
         </div>
 
