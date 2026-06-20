@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import LegalizationMap from "./LegalizationMap";
 import { 
   Scale, 
   FileText, 
@@ -23,7 +24,8 @@ import {
   clientPolicy, 
   driverPolicy, 
   ownerPolicy,
-  legalRegulations 
+  legalRegulations,
+  securityTerms
 } from "../data/legalTexts";
 
 export interface FAQItem {
@@ -108,15 +110,45 @@ interface LegalCenterProps {
 }
 
 export default function LegalCenter({ currentRole = "guest", onClose }: LegalCenterProps) {
-  const [activeTab, setActiveTab] = useState<"client" | "driver" | "owner">(() => {
-    if (currentRole === "client") return "client";
-    if (currentRole === "driver") return "driver";
-    if (currentRole === "owner") return "owner";
-    return "client"; // default
-  });
+  const [activeTab, setActiveTab] = useState<"client" | "driver" | "owner" | "security" | "legalisation">("security");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [copied, setCopied] = useState(false);
+
+  // Pledge signature form states
+  const [pledgeName, setPledgeName] = useState("");
+  const [pledgeRole, setPledgeRole] = useState<"client" | "driver" | "owner">(
+    currentRole === "guest" || currentRole === "admin" ? "client" : currentRole
+  );
+  const [pledgeCasque, setPledgeCasque] = useState(false);
+  const [pledgeRules, setPledgeRules] = useState(false);
+  const [pledgeNoProhibited, setPledgeNoProhibited] = useState(false);
+  const [pledgeRespectDrivers, setPledgeRespectDrivers] = useState(false);
+  const [pledgeRespectAgents, setPledgeRespectAgents] = useState(false);
+  const [pledgeZeroTolerance, setPledgeZeroTolerance] = useState(false);
+  const [isPledgeSigned, setIsPledgeSigned] = useState(false);
+  const [pledgeCertCode, setPledgeCertCode] = useState("");
+  const [pledgeDateStr, setPledgeDateStr] = useState("");
+
+  const handleSignPledge = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pledgeName.trim() || !pledgeCasque || !pledgeRules || !pledgeNoProhibited || !pledgeRespectDrivers || !pledgeRespectAgents || !pledgeZeroTolerance) return;
+    const randomHex = Math.floor(100000 + Math.random() * 900000).toString();
+    const prefix = pledgeRole === "driver" ? "MOTARD" : pledgeRole === "owner" ? "PROP" : "PASS";
+    setPledgeCertCode(`GOMOTO-RDC-SEC-${prefix}-${randomHex}`);
+    
+    const options: Intl.DateTimeFormatOptions = { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    };
+    const nowStr = new Date().toLocaleDateString("fr-CD", options);
+    setPledgeDateStr(nowStr);
+    setIsPledgeSigned(true);
+  };
 
   // States for the interactive FAQ
   const [faqSearchQuery, setFaqSearchQuery] = useState("");
@@ -239,11 +271,30 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
             "Séquestre de sécurité des règlements et arbitrages de litige de versement."
           ]
         }
+      },
+      security: {
+        title: "Codes de Sécurité Nationaux & Rôle d'Arbitre d'État de GoMoto RDC",
+        badge: "Sécurité Routière RDC",
+        icon: Shield,
+        color: "emerald",
+        bgColor: "bg-emerald-50/50 border-emerald-100",
+        btnColor: "bg-emerald-600 hover:bg-emerald-700 text-white",
+        textColor: "text-emerald-950 border-emerald-500",
+        data: securityTerms,
+        extra: {
+          title: "Importance Cruciale du Rôle de GoMoto",
+          items: [
+            "Arbitre tiers impartial luttant activement contre le harcèlement routier, le faux racket et les tracasseries policières (PCR).",
+            "Portefeuille numérique (Mobile Money) limitant le transport physique de CDF pour couper court aux attaques de nuit.",
+            "Géofencing GPS prévenant de façon stricte et automatique l'entrée accidentelle en zone de transit interdite (la Gombe).",
+            "Suivi de vitesse télématique et notation continue réduisant de 90% le risque d'accidentologie grave."
+          ]
+        }
       }
     };
   }, []);
 
-  const activeDoc = documentMap[activeTab];
+  const activeDoc = documentMap[activeTab === "legalisation" ? "security" : activeTab];
 
   // Search logic to filter headings or paragraph text in the active document
   const filteredSections = useMemo(() => {
@@ -335,6 +386,23 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 flex-wrap">
             
+            {/* Tab: Security Codes */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("security");
+                setSearchQuery("");
+              }}
+              className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border cursor-pointer ${
+                activeTab === "security" 
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md scale-102 font-bold" 
+                  : "bg-white text-slate-650 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <Shield className="w-4 h-4 text-emerald-500" />
+              <span>Codes de Sécurité (Loi RDC)</span>
+            </button>
+
             {/* Tab: Passenger */}
             <button
               type="button"
@@ -394,6 +462,23 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
                 <span className="h-2 w-2 rounded-full bg-purple-400 shrink-0 animate-ping"></span>
               )}
             </button>
+
+            {/* Tab: Legalization points Map */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("legalisation");
+                setSearchQuery("");
+              }}
+              className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border cursor-pointer ${
+                activeTab === "legalisation" 
+                  ? "bg-blue-600 text-white border-blue-600 shadow-md scale-102" 
+                  : "bg-white text-slate-650 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <Scale className="w-4 h-4 text-blue-500" />
+              <span>Points de Légalisation d'Etat (Carte)</span>
+            </button>
             
           </div>
 
@@ -416,7 +501,7 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
         </div>
 
         {/* Role Matching Notification Alert */}
-        {currentRole !== "guest" && currentRole !== "admin" && currentRole !== activeTab && (
+        {currentRole !== "guest" && currentRole !== "admin" && activeTab !== "legalisation" && currentRole !== activeTab && (
           <div className="mt-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl px-3.5 py-2 text-[11px] flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
             <p>
@@ -427,7 +512,8 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
       </div>
 
       {/* ACTIONS ROW & SEARCH */}
-      <div className="border-b border-slate-150 p-4 bg-slate-50/50 flex flex-col md:flex-row gap-3 items-center justify-between">
+      {activeTab !== "legalisation" && (
+        <div className="border-b border-slate-150 p-4 bg-slate-50/50 flex flex-col md:flex-row gap-3 items-center justify-between">
         
         {/* Search input field */}
         <div className="relative w-full md:w-80">
@@ -484,9 +570,15 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
           </button>
         </div>
       </div>
+      )}
 
       {/* CORE LEGAL TEXT DISPLAY BOARD */}
-      <div id="legal-center-document-board" className="p-6 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {activeTab === "legalisation" ? (
+        <div className="p-6 md:p-8">
+          <LegalizationMap />
+        </div>
+      ) : (
+        <div id="legal-center-document-board" className="p-6 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* LEFT & CENTER PANEL: Term Sections (dynamic content) */}
         <div className="lg:col-span-2 space-y-6">
@@ -494,7 +586,8 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
             <div>
               <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
                 activeTab === "client" ? "bg-blue-100 text-blue-800" :
-                activeTab === "driver" ? "bg-amber-100 text-amber-800" : "bg-purple-100 text-purple-800"
+                activeTab === "driver" ? "bg-amber-100 text-amber-800" :
+                activeTab === "owner" ? "bg-purple-100 text-purple-800" : "bg-emerald-100 text-emerald-800 font-bold border border-emerald-300"
               }`}>
                 {activeDoc.badge}
               </span>
@@ -532,13 +625,15 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
                   className={`p-5 rounded-2xl border transition-all ${
                     activeTab === "client" ? "bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm" :
                     activeTab === "driver" ? "bg-white border-slate-200 hover:border-amber-300 hover:shadow-sm" : 
-                    "bg-white border-slate-200 hover:border-purple-300 hover:shadow-sm"
+                    activeTab === "owner" ? "bg-white border-slate-200 hover:border-purple-300 hover:shadow-sm" :
+                    "bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm"
                   }`}
                 >
                   <h4 className="text-sm font-black text-slate-800 flex items-center gap-2 mb-2.5">
                     <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs ${
                       activeTab === "client" ? "bg-blue-100 text-blue-700" :
-                      activeTab === "driver" ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700"
+                      activeTab === "driver" ? "bg-amber-100 text-amber-700" : 
+                      activeTab === "owner" ? "bg-purple-100 text-purple-700" : "bg-emerald-100 text-emerald-700"
                     }`}>
                       {sIndex + 1}
                     </span>
@@ -551,14 +646,224 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
                         className="text-[12px] text-slate-650 leading-relaxed font-normal"
                         dangerouslySetInnerHTML={{
                           __html: searchQuery 
-                            ? paragraph.replace(new RegExp(`(${searchQuery})`, "gi"), "<mark class='bg-yellow-200 text-slate-905 px-0.5 rounded font-black'>$1</mark>")
-                            : paragraph
+                           ? paragraph.replace(new RegExp(`(${searchQuery})`, "gi"), "<mark class='bg-yellow-200 text-slate-905 px-0.5 rounded font-black'>$1</mark>")
+                           : paragraph
                         }}
                       />
                     ))}
                   </div>
                 </div>
               ))}
+
+              {/* ================= INTERACTIVE SAFETY PLEDGE MODULE (codes d'application obligatoire) ================= */}
+              {activeTab === "security" && (
+                <div id="safety-pledge-module" className="bg-gradient-to-br from-emerald-950 via-slate-950 to-slate-900 border-2 border-emerald-500/30 rounded-3xl p-6 text-white space-y-6 mt-8 shadow-lg">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-emerald-500/15 text-emerald-400 rounded-2xl border border-emerald-500/30 shrink-0">
+                      <Shield className="w-6 h-6" />
+                    </div>
+                    <div className="text-left">
+                      <span className="text-[9px] font-mono font-black text-emerald-400 uppercase tracking-widest block">CONTRAT DE CITOYENNETÉ ROUTIÈRE</span>
+                      <h4 className="text-base font-black text-white font-sans mt-0.5">Engagement Obligatoire au Pacte de Sécurité GoMoto RDC</h4>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                        Chaque motard, passager et propriétaire de flotte est légalement tenu de souscrire formellement à l'application rigoureuse du Code de la Route Congolais (Loi n° 78/022) pour la préservation des vies humaines en RDC.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!isPledgeSigned ? (
+                    <form onSubmit={handleSignPledge} className="space-y-5 text-left border-t border-slate-800/80 pt-4">
+                      
+                      {/* Name and Role inputs */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5Col">
+                          <label htmlFor="pledge-name-inp" className="block text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                            Votre Nom & Postnom complet :
+                          </label>
+                          <input
+                            id="pledge-name-inp"
+                            type="text"
+                            required
+                            value={pledgeName}
+                            onChange={(e) => setPledgeName(e.target.value)}
+                            placeholder="Ex: Justin Kakonde Mbuyi"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-emerald-500 placeholder-slate-600 font-semibold"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label htmlFor="pledge-role-inp" className="block text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                            Votre Statut sur l'application :
+                          </label>
+                          <select
+                            id="pledge-role-inp"
+                            value={pledgeRole}
+                            onChange={(e) => setPledgeRole(e.target.value as any)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-emerald-500 font-semibold"
+                          >
+                            <option value="client">Passager (Client Voyageur)</option>
+                            <option value="driver">Chauffeur (Pilote Motard)</option>
+                            <option value="owner">Propriétaire de Flotte (Investisseur)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Explicit Interactive Checkboxes */}
+                      <div className="space-y-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-850">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Cochez chaque article obligatoire pour valider :</span>
+                        
+                        <label className="flex items-start gap-3 cursor-pointer text-xs select-none group">
+                          <input
+                            type="checkbox"
+                            checked={pledgeCasque}
+                            onChange={(e) => setPledgeCasque(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-500 rounded border-slate-800 mt-0.5 shrink-0"
+                          />
+                          <span className="text-[11px] text-slate-350 leading-relaxed group-hover:text-white transition">
+                            <b>Art 1.</b> Je m’engage au port systématique du <b>casque de protection homologué</b> (double casque obligatoire pour le motard et son passager) à chaque seconde du trajet.
+                          </span>
+                        </label>
+
+                        <label className="flex items-start gap-3 cursor-pointer text-xs select-none group">
+                          <input
+                            type="checkbox"
+                            checked={pledgeRules}
+                            onChange={(e) => setPledgeRules(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-500 rounded border-slate-800 mt-0.5 shrink-0"
+                          />
+                          <span className="text-[11px] text-slate-350 leading-relaxed group-hover:text-white transition">
+                            <b>Art 2 & 3.</b> Je m'oppose fermement à toute forme de <b>surcharge</b>, au surpassement des <b>50 km/h</b> et au franchissement de la <b>commune interdite de la Gombe</b>.
+                          </span>
+                        </label>
+
+                        <label className="flex items-start gap-3 cursor-pointer text-xs select-none group">
+                          <input
+                            type="checkbox"
+                            checked={pledgeNoProhibited}
+                            onChange={(e) => setPledgeNoProhibited(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-500 rounded border-slate-800 mt-0.5 shrink-0"
+                          />
+                          <span className="text-[11px] text-slate-350 leading-relaxed group-hover:text-white transition">
+                            <b>Art 7.</b> Je promets une <b>vigilance civique totale</b> (aucun transport de colis suspect, fret prohibé ou stupéfiant) et accepte l'arbitrage légitime de GoMoto.
+                          </span>
+                        </label>
+
+                        <label className="flex items-start gap-3 cursor-pointer text-xs select-none group">
+                          <input
+                            type="checkbox"
+                            checked={pledgeRespectDrivers}
+                            onChange={(e) => setPledgeRespectDrivers(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-500 rounded border-slate-800 mt-0.5 shrink-0"
+                          />
+                          <span className="text-[11px] text-slate-350 leading-relaxed group-hover:text-white transition">
+                            <b>Art 8. Dignité & Respect absolu du Chauffeur.</b> Je m’engage de manière solennelle et irrévocable à saluer mon chauffeur (pilote motard), à traiter sa personne avec civilité et déférence, et à proscrire rigoureusement tout comportement agressif, injure rabaissante, haussement de ton ou violence (physique ou verbale) à son égard.
+                          </span>
+                        </label>
+
+                        <label className="flex items-start gap-3 cursor-pointer text-xs select-none group">
+                          <input
+                            type="checkbox"
+                            checked={pledgeRespectAgents}
+                            onChange={(e) => setPledgeRespectAgents(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-500 rounded border-slate-800 mt-0.5 shrink-0"
+                          />
+                          <span className="text-[11px] text-slate-350 leading-relaxed group-hover:text-white transition">
+                            <b>Art 9. Courtoisie & Collaboration avec les Agents.</b> Je m’engage à interagir avec tout agent du service clientèle (support d'arbitrage) de GoMoto RDC avec <b>bienséance, politesse et intégrité</b>. Je m'interdis d’user d’intimidation, de fausses plaintes ou d'outrage, sous peine de clôture immédiate et sans recours du compte client.
+                          </span>
+                        </label>
+
+                        <label className="flex items-start gap-3 cursor-pointer text-xs select-none group">
+                          <input
+                            type="checkbox"
+                            checked={pledgeZeroTolerance}
+                            onChange={(e) => setPledgeZeroTolerance(e.target.checked)}
+                            className="h-4 w-4 accent-emerald-500 rounded border-slate-800 mt-0.5 shrink-0"
+                          />
+                          <span className="text-[11px] text-slate-350 leading-relaxed group-hover:text-white transition">
+                            <b>Art 10. Vigilance Civique Sévère.</b> Je reconnais formellement que tout comportement ou conduite à risques, toute violence, ainsi que le transport ou trafic de stupéfiants ou d'armes à feu feront l'objet d'un signalement immédiat et d'une transmission de dossier aux autorités policières et judiciaires compétentes de la RDC.
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* Action Button */}
+                      <button
+                        type="submit"
+                        disabled={!pledgeName.trim() || !pledgeCasque || !pledgeRules || !pledgeNoProhibited || !pledgeRespectDrivers || !pledgeRespectAgents || !pledgeZeroTolerance}
+                        className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-slate-950 text-xs font-black py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-emerald-500/10 transition-all cursor-pointer uppercase font-mono tracking-wider"
+                      >
+                        <CheckCircle className="w-4 h-4 shrink-0" />
+                        <span>Signer & Enregistrer mon Engagement</span>
+                      </button>
+                    </form>
+                  ) : (
+                    /* Dynamic Official Certificate Display */
+                    <div className="bg-slate-900 border-2 border-emerald-500/40 rounded-2xl p-5 text-center relative overflow-hidden space-y-4 animate-fade-in border-dashed text-left">
+                      <div className="absolute top-2 right-2 rotate-12 opacity-5 pointer-events-none">
+                        <Shield className="w-40 h-40 text-emerald-400" />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 border-b border-slate-800 pb-3">
+                        <div>
+                          <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black font-mono px-2.5 py-1 rounded">
+                            CERTIFICAT ENREGISTRÉ (OFFICIEL RDC)
+                          </span>
+                          <h5 className="text-sm font-black text-white mt-1.5">GoMoto RDC Civil Road Pact</h5>
+                        </div>
+                        <div className="font-mono text-[9px] text-slate-500 shrink-0 text-right sm:text-right">
+                          ID: <span className="text-slate-350 select-all font-bold">{pledgeCertCode}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 font-sans leading-relaxed text-slate-300 py-1">
+                        <p className="text-xs">
+                          Par le présent document numérique d'État, la plateforme <b>GoMoto RDC</b> certifie que l'utilisateur :
+                        </p>
+                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex items-center justify-between">
+                          <div>
+                            <span className="text-[8px] font-mono text-slate-500 uppercase block">Titulaire de signature</span>
+                            <span className="font-black text-white text-[12.5px] uppercase">{pledgeName}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[8px] font-mono text-slate-500 uppercase block">Statut Actif</span>
+                            <span className="text-emerald-400 text-[10px] font-mono font-black uppercase">
+                              ✓ {pledgeRole === "driver" ? "Chauffeur Agréé" : pledgeRole === "owner" ? "Gérant Fleet" : "Passager Votant"}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          s'est engagé de manière irrévocable à appliquer strictement le document d'État relatif à la sécurité routière. Cet engagement civique est synchronisé avec les bases d'arbitrage de GoMoto pour garantir la traçabilité et écarter tout risque récurrent d'accidents ou de litige sur la voie publique.
+                        </p>
+                      </div>
+
+                      <div className="border-t border-slate-800 pt-3 flex flex-col sm:flex-row justify-between items-center gap-3">
+                        <div className="text-left">
+                          <span className="text-[8px] font-mono text-slate-500 uppercase block">Horodatage de validation</span>
+                          <span className="text-[10px] font-mono text-slate-400 font-semibold">{pledgeDateStr}</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsPledgeSigned(false);
+                            setPledgeName("");
+                            setPledgeCasque(false);
+                            setPledgeRules(false);
+                            setPledgeNoProhibited(false);
+                            setPledgeRespectDrivers(false);
+                            setPledgeRespectAgents(false);
+                            setPledgeZeroTolerance(false);
+                          }}
+                          className="bg-slate-950 hover:bg-slate-850 hover:text-white border border-slate-800 text-slate-400 font-mono text-[9px] py-1.5 px-3 rounded-lg transition-all cursor-pointer"
+                        >
+                          Révoquer & Re-signer
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
             </div>
           )}
         </div>
@@ -631,6 +936,7 @@ export default function LegalCenter({ currentRole = "guest", onClose }: LegalCen
 
         </div>
       </div>
+      )}
 
       {/* ================= SECTION FAQ INTERACTIVE ET DÉCISIONNEL ROUTIER GOMOTO RDC ================= */}
       <div id="interactive-faq-section" className="border-t border-slate-200 bg-slate-50/50 p-6 md:p-8 space-y-8">

@@ -3,7 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip as RechartsTooltip, 
+  Legend as RechartsLegend, 
+  ResponsiveContainer,
+  Cell
+} from "recharts";
 import { UserProfile, MotorCycle, WalletTransaction, AdminModificationRequest, DRCAddress, SubmittedTaxDocument, DocumentType } from "../types";
 import { mockAvenues } from "../data/drcLocations";
 import { 
@@ -34,11 +45,14 @@ import {
   Star,
   Eye,
   Check,
-  X
+  X,
+  Activity,
+  Copy,
+  RefreshCw
 } from "lucide-react";
 
 import { AppLanguage } from "../lib/translations";
-import { generateDailyRevenuePDF, generateAnnualTaxPDF, GOMOTO_HQ_ADDRESS, formatDRCAddress } from "../lib/pdfGenerators";
+import { generateDailyRevenuePDF, generateAnnualTaxPDF, generateFleetAnalyticalPDF, GOMOTO_HQ_ADDRESS, formatDRCAddress } from "../lib/pdfGenerators";
 
 interface OwnerDashboardProps {
   profile: UserProfile;
@@ -61,7 +75,7 @@ export default function OwnerDashboard({
   onSubmitTaxDoc,
   submittedTaxDocs = [],
 }: OwnerDashboardProps) {
-  const [activeTab, setActiveTab] = useState<"fleet" | "wallet" | "profile" | "fiscalite">("fleet");
+  const [activeTab, setActiveTab] = useState<"fleet" | "wallet" | "profile" | "fiscalite" | "analytique">("fleet");
   const [docTypeToSubmit, setDocTypeToSubmit] = useState<"daily_revenue" | "annual_tax">("daily_revenue");
   const [periodToSubmit, setPeriodToSubmit] = useState<string>("Aujourd'hui");
   const [submissionFeedback, setSubmissionFeedback] = useState<string>("");
@@ -159,6 +173,62 @@ export default function OwnerDashboard({
     }
   ]);
 
+  // States for analytical dashboard
+  const [chartPeriod, setChartPeriod] = useState<"daily" | "monthly">("daily");
+  const [chartCurrency, setChartCurrency] = useState<"CDF" | "USD">("CDF");
+  const [chartMetric, setChartMetric] = useState<"gross" | "commission">("gross");
+
+  // Dynamic real-time calculation based on fleet drivers performance
+  const initialTotalGross = 2640000;
+  const currentTotalGross = useMemo(() => {
+    return driversPerformance.reduce((sum, d) => sum + d.revenueCDF, 0);
+  }, [driversPerformance]);
+  
+  const simulatedIncrement = Math.max(0, currentTotalGross - initialTotalGross);
+
+  const dailyData = useMemo(() => {
+    const baselines = [
+      { day: "Lun", grossCDF: 310000 },
+      { day: "Mar", grossCDF: 350000 },
+      { day: "Mer (Auj.)", grossCDF: 410000 + simulatedIncrement },
+      { day: "Jeu", grossCDF: 330000 },
+      { day: "Ven", grossCDF: 480000 },
+      { day: "Sam", grossCDF: 540000 },
+      { day: "Dim", grossCDF: 220000 }
+    ];
+    return baselines.map(b => ({
+      ...b,
+      commCDF: Math.round(b.grossCDF * 0.15),
+      grossUSD: parseFloat((b.grossCDF / 2500).toFixed(1)),
+      commUSD: parseFloat((b.grossCDF * 0.15 / 2500).toFixed(1))
+    }));
+  }, [simulatedIncrement]);
+
+  const monthlyData = useMemo(() => {
+    const baselines = [
+      { month: "Jan", grossCDF: 4800000 },
+      { month: "Fév", grossCDF: 5200000 },
+      { month: "Mar", grossCDF: 6100000 },
+      { month: "Avr", grossCDF: 5900000 },
+      { month: "Mai", grossCDF: 6500000 },
+      { month: "Juin", grossCDF: currentTotalGross }
+    ];
+    return baselines.map(b => ({
+      ...b,
+      commCDF: Math.round(b.grossCDF * 0.15),
+      grossUSD: parseFloat((b.grossCDF / 2500).toFixed(1)),
+      commUSD: parseFloat((b.grossCDF * 0.15 / 2500).toFixed(1))
+    }));
+  }, [currentTotalGross]);
+
+  // Handle analytical report download
+  const handleDownloadAnalyticalPDF = () => {
+    const cleanDaily = dailyData.map(d => ({ day: d.day, grossCDF: d.grossCDF, commCDF: d.commCDF }));
+    const cleanMonthly = monthlyData.map(m => ({ month: m.month, grossCDF: m.grossCDF, commCDF: m.commCDF }));
+    const pdf = generateFleetAnalyticalPDF(profile, driversPerformance, cleanDaily, cleanMonthly);
+    pdf.save(`GoMoto_Rapport_Analytique_Flotte_${profile.firstName}_${profile.lastName}.pdf`);
+  };
+
   // Mock fleet list
   const [motos, setMotos] = useState<MotorCycle[]>([]);
   const [showAddMotoModal, setShowAddMotoModal] = useState(false);
@@ -171,6 +241,13 @@ export default function OwnerDashboard({
   const [payoutAmount, setPayoutAmount] = useState("");
   const [payoutCurrency, setPayoutCurrency] = useState<"CDF" | "USD">("CDF");
   const [payoutMethod, setPayoutMethod] = useState<"M-Pesa" | "Orange Money" | "Airtel Money">("M-Pesa");
+
+  // Commission & Expense Share dynamic calculator states
+  const [calcAmount, setCalcAmount] = useState<number>(15000);
+  const [calcCurrency, setCalcCurrency] = useState<"CDF" | "USD">("CDF");
+  const [calcOwnerPercent, setCalcOwnerPercent] = useState<number>(20); // Default owner versement of 20%
+  const [fuelPaidBy, setFuelPaidBy] = useState<"driver" | "owner" | "split">("driver");
+  const [maintenancePaidBy, setMaintenancePaidBy] = useState<"driver" | "owner" | "split">("owner");
 
   // Profile recours
   const [showModModal, setShowModModal] = useState(false);
@@ -190,6 +267,131 @@ export default function OwnerDashboard({
   const [designatedDriverIdCard, setDesignatedDriverIdCard] = useState(profile.designatedDriverIdCard || "");
   const [designatedDriverLicense, setDesignatedDriverLicense] = useState(profile.designatedDriverLicense || "");
   const [saveSuccessMessage, setSaveSuccessMessage] = useState("");
+
+  // Local Government Compliance Documents for Motorcycle Owners (Carte rose, assurance, etc.)
+  interface GovDocument {
+    id: string;
+    type: string;
+    typeName: string;
+    docNumber: string;
+    issueDate: string;
+    expiryDate: string;
+    status: "pending" | "approved" | "rejected";
+    submittedAt: string;
+    photoUrl: string;
+  }
+
+  const [govDocs, setGovDocs] = useState<GovDocument[]>(() => {
+    try {
+      const stored = localStorage.getItem(`gomoto_owner_gov_docs_${profile.id}`);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.error(e);
+    }
+    // Professional initial state representing pre-verified state docs
+    return [
+      {
+        id: "gov-doc-1",
+        type: "carte_rose",
+        typeName: "Certificat d'Immatriculation de l'Hôtel de Ville (Carte Rose)",
+        docNumber: "C0-MC-4458KIN26",
+        issueDate: "2025-01-15",
+        expiryDate: "2028-01-15",
+        status: "approved",
+        submittedAt: "18-01-2026 à 10:45",
+        photoUrl: "https://images.unsplash.com/photo-15544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150"
+      },
+      {
+        id: "gov-doc-2",
+        type: "permis_exploitation",
+        typeName: "Autorisation de Transport & Permis d'Exploitation Urbain",
+        docNumber: "TRANS-EXPL-88390",
+        issueDate: "2026-02-10",
+        expiryDate: "2027-02-10",
+        status: "approved",
+        submittedAt: "12-02-2026 à 14:22",
+        photoUrl: "https://images.unsplash.com/photo-15544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150"
+      }
+    ];
+  });
+
+  // State elements for the compliance upload form
+  const [govDocType, setGovDocType] = useState<string>("assurance_moto");
+  const [govDocNumber, setGovDocNumber] = useState<string>("");
+  const [govDocIssueDate, setGovDocIssueDate] = useState<string>("");
+  const [govDocExpiryDate, setGovDocExpiryDate] = useState<string>("");
+  const [govDocPhoto, setGovDocPhoto] = useState<string>("");
+  const [govDocFeedback, setGovDocFeedback] = useState<string>("");
+
+  const handleAddGovDoc = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!govDocNumber.trim() || !govDocIssueDate || !govDocExpiryDate) {
+      setGovDocFeedback("⚠️ Veuillez renseigner tous les champs requis du document.");
+      return;
+    }
+
+    const typeNames: Record<string, string> = {
+      carte_rose: "Certificat d'Immatriculation (Carte Rose)",
+      permis_exploitation: "Autorisation de Transport & Permis d'Exploitation Urbain",
+      assurance_moto: "Certificat d'Assurance Responsabilité Civile (SONAS)",
+      visite_technique: "Attestation de Contrôle Technique Obligatoire",
+      vignette_fiscale: "Quittance de Paiement de la Vignette Annuelle"
+    };
+
+    const newGovDoc: GovDocument = {
+      id: "gov-doc-" + Date.now(),
+      type: govDocType,
+      typeName: typeNames[govDocType] || govDocType,
+      docNumber: govDocNumber.trim(),
+      issueDate: govDocIssueDate,
+      expiryDate: govDocExpiryDate,
+      status: "pending", // Pending audit validation
+      submittedAt: new Date().toLocaleDateString("fr-CD", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      }),
+      photoUrl: govDocPhoto || "https://images.unsplash.com/photo-15544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150"
+    };
+
+    const updated = [newGovDoc, ...govDocs.filter(d => d.type !== govDocType)];
+    setGovDocs(updated);
+    localStorage.setItem(`gomoto_owner_gov_docs_${profile.id}`, JSON.stringify(updated));
+
+    // Reset fields
+    setGovDocNumber("");
+    setGovDocIssueDate("");
+    setGovDocExpiryDate("");
+    setGovDocPhoto("");
+    setGovDocFeedback("✓ Le dossier de conformité étatique a été transmis avec succès aux services d'enrôlement officiel !");
+    setTimeout(() => {
+      setGovDocFeedback("");
+    }, 5000);
+  };
+  
+  // Double Enrollment States
+  const [enrollmentCode, setEnrollmentCode] = useState<string>(() => {
+    return localStorage.getItem(`gomoto_owner_enrollment_code_${profile.id}`) || "";
+  });
+  const [isSendingCode, setIsSendingCode] = useState<boolean>(false);
+  const [codeSentMessage, setCodeSentMessage] = useState<string>("");
+  const [isCodeCopied, setIsCodeCopied] = useState<boolean>(false);
+  const [crossEnrollmentStatus, setCrossEnrollmentStatus] = useState<string>(() => {
+    return localStorage.getItem(`gomoto_cross_verification_${profile.id}`) || "pending";
+  });
+
+  // Sync cross enrollment status on interval or mount
+  useEffect(() => {
+    const checkStatus = () => {
+      const status = localStorage.getItem(`gomoto_cross_verification_${profile.id}`) || "pending";
+      setCrossEnrollmentStatus(status);
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 3000);
+    return () => clearInterval(interval);
+  }, [profile.id]);
 
   useEffect(() => {
     setOwnerCompleteAddress(profile.ownerCompleteAddress || "");
@@ -263,6 +465,18 @@ export default function OwnerDashboard({
       return;
     }
 
+    // Auto-generate the official cross-affiliation code
+    let finalCode = enrollmentCode;
+    if (!finalCode) {
+      const randHex = Math.floor(100000 + Math.random() * 900000).toString(16).toUpperCase();
+      finalCode = `GOMOTO-RDC-${profile.lastName.substring(0, 3).toUpperCase() || "OWN"}-${randHex}`;
+      setEnrollmentCode(finalCode);
+      localStorage.setItem(`gomoto_owner_enrollment_code_${profile.id}`, finalCode);
+      // Reset cross verification status to pending for new chauffeur designated
+      localStorage.setItem(`gomoto_cross_verification_${profile.id}`, "pending");
+      setCrossEnrollmentStatus("pending");
+    }
+
     onUpdateProfile({
       ...profile,
       ownerCompleteAddress: ownerCompleteAddress.trim(),
@@ -272,7 +486,7 @@ export default function OwnerDashboard({
       designatedDriverLicense: designatedDriverLicense.trim(),
     });
 
-    setSaveSuccessMessage("✓ Vos informations d'affiliation obligatoire ont été enregistrées avec succès !");
+    setSaveSuccessMessage("✓ Vos informations d'affiliation obligatoire ont été enregistrées avec succès ! Code d'audit d'enrôlement croisé d'État généré.");
     setTimeout(() => {
       setSaveSuccessMessage("");
     }, 5000);
@@ -599,11 +813,11 @@ export default function OwnerDashboard({
           </div>
 
           {/* Tabs switch */}
-          <div className="flex gap-1.5 mt-5 bg-slate-950 p-1.5 rounded-xl border border-slate-850/80">
+          <div className="flex flex-wrap gap-1.5 mt-5 bg-slate-950 p-1.5 rounded-xl border border-slate-850/80">
             <button
               type="button"
               onClick={() => setActiveTab("fleet")}
-              className={`flex-1 text-center py-2 rounded-lg text-[10px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
+              className={`flex-1 min-w-[70px] text-center py-1.5 rounded-lg text-[9px] font-black tracking-wider uppercase transition-all cursor-pointer ${
                 activeTab === "fleet" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -612,7 +826,7 @@ export default function OwnerDashboard({
             <button
               type="button"
               onClick={() => setActiveTab("wallet")}
-              className={`flex-1 text-center py-2 rounded-lg text-[10px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
+              className={`flex-1 min-w-[70px] text-center py-1.5 rounded-lg text-[9px] font-black tracking-wider uppercase transition-all cursor-pointer ${
                 activeTab === "wallet" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -620,8 +834,17 @@ export default function OwnerDashboard({
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab("analytique")}
+              className={`flex-1 min-w-[70px] text-center py-1.5 rounded-lg text-[9px] font-black tracking-wider uppercase transition-all cursor-pointer ${
+                activeTab === "analytique" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Analytique
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab("profile")}
-              className={`flex-1 text-center py-2 rounded-lg text-[10px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
+              className={`flex-1 min-w-[70px] text-center py-1.5 rounded-lg text-[9px] font-black tracking-wider uppercase transition-all cursor-pointer ${
                 activeTab === "profile" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -630,7 +853,7 @@ export default function OwnerDashboard({
             <button
               type="button"
               onClick={() => setActiveTab("fiscalite")}
-              className={`flex-1 text-center py-2 rounded-lg text-[10px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
+              className={`flex-1 min-w-[70px] text-center py-1.5 rounded-lg text-[9px] font-black tracking-wider uppercase transition-all cursor-pointer ${
                 activeTab === "fiscalite" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -914,6 +1137,244 @@ export default function OwnerDashboard({
               </div>
             </div>
 
+            {/* ================= OUTIL DE CALCUL DE COMMISSION AUTOMATIQUE & TRANSPARENCE EXPENSES (PROPRIÉTAIRE) ================= */}
+            <div className="bg-slate-950 p-5 rounded-3xl border border-slate-850 space-y-5">
+              <div className="flex items-center gap-3">
+                <span className="p-2 bg-yellow-500/10 text-yellow-500 rounded-xl border border-yellow-500/20">
+                  <Activity className="w-4 h-4 text-yellow-400" />
+                </span>
+                <div>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Simulateur de Commission & Rentabilité de Flotte (Carburant / Vidange)</h4>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5">Calculateur automatique des redevances d'assurance d'État GoMoto RDC et répartition des charges avec vos motards</p>
+                </div>
+              </div>
+
+              {/* Course inputs & Owner slice share */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
+                {/* Simulated course field */}
+                <div className="space-y-2 text-left">
+                  <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Montant Brut de la Course d'un Motard</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={calcAmount}
+                      onChange={(e) => setCalcAmount(Math.max(0, Number(e.target.value)))}
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white font-extrabold outline-none focus:border-yellow-500"
+                      placeholder="Ex: 15000"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newCurr = calcCurrency === "CDF" ? "USD" : "CDF";
+                        setCalcCurrency(newCurr);
+                        setCalcAmount(newCurr === "CDF" ? 15000 : 6);
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl px-3.5 text-xs font-mono font-black text-yellow-500 cursor-pointer"
+                    >
+                      {calcCurrency}
+                    </button>
+                  </div>
+
+                  {/* Predefined common RDC buttons */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {calcCurrency === "CDF" ? (
+                      [3000, 5000, 10000, 15000, 25000, 50000].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCalcAmount(v)}
+                          className={`text-[8px] font-mono px-2 py-1 rounded-lg border transition-all ${
+                            calcAmount === v 
+                              ? "bg-yellow-500 text-slate-950 border-yellow-500 font-extrabold" 
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {v.toLocaleString()} CDF
+                        </button>
+                      ))
+                    ) : (
+                      [2, 5, 8, 12, 20, 35].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCalcAmount(v)}
+                          className={`text-[8px] font-mono px-2 py-1 rounded-lg border transition-all ${
+                            calcAmount === v 
+                              ? "bg-yellow-500 text-slate-950 border-yellow-500 font-extrabold" 
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          ${v} USD
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Owner’s contract margin percentage */}
+                <div className="space-y-2 text-left">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Commission Assignée au Propriétaire</label>
+                    <span className="text-[10px] text-yellow-500 font-black font-mono">{calcOwnerPercent}%</span>
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={calcOwnerPercent}
+                      onChange={(e) => setCalcOwnerPercent(Number(e.target.value))}
+                      className="w-full accent-yellow-500 cursor-pointer h-1.5"
+                    />
+                  </div>
+                  <p className="text-[8.5px] text-slate-500 leading-relaxed">
+                    Votre commission propriétaire brute avant déduction du carburant et de la vidange d'huile. Taux d'accord libre recommandé: <b>20% à 30%</b>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Expense sharing configurations */}
+              <div className="border-t border-slate-850 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Fuel Split selector */}
+                <div className="space-y-1.5 text-left">
+                  <span className="text-[9.5px] font-black text-slate-300 uppercase font-mono flex items-center gap-1.5">
+                    <span>⛽</span> Contribution Carburant (Essence)
+                  </span>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    {(["driver", "owner", "split"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setFuelPaidBy(m)}
+                        className={`text-[8.5px] font-black py-1 px-1 rounded-lg border uppercase transition text-center ${
+                          fuelPaidBy === m
+                            ? "bg-amber-500 text-slate-950 border-amber-500 font-bold"
+                            : "bg-slate-950 border-transparent text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {m === "driver" ? "Motard 100%" : m === "owner" ? "Proprio 100%" : "Partage 50/50"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[8px] text-slate-500 leading-normal">
+                    Frais de carburant de trajet estimés: <span className="font-mono text-slate-300 font-extrabold">{(calcAmount * 0.18).toLocaleString("fr-FR")} {calcCurrency}</span> (~18% de consommation moyenne 150cc)
+                  </p>
+                </div>
+
+                {/* Maintenance Split selector */}
+                <div className="space-y-1.5 text-left">
+                  <span className="text-[9.5px] font-black text-slate-300 uppercase font-mono flex items-center gap-1.5">
+                    <span>🛠️</span> Vidange & Maintenance Moto
+                  </span>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    {(["driver", "owner", "split"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMaintenancePaidBy(m)}
+                        className={`text-[8.5px] font-black py-1 px-1 rounded-lg border uppercase transition text-center ${
+                          maintenancePaidBy === m
+                            ? "bg-amber-500 text-slate-950 border-amber-500 font-bold"
+                            : "bg-slate-950 border-transparent text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {m === "driver" ? "Motard 100%" : m === "owner" ? "Proprio 100%" : "Partage 50/50"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[8px] text-slate-500 leading-normal">
+                    Budget de maintenance de route estimé: <span className="font-mono text-slate-300 font-extrabold">{(calcAmount * 0.10).toLocaleString("fr-FR")} {calcCurrency}</span> (~10% amortissement matériel)
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Calculation output summary card */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4.5 space-y-4 font-mono">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-sans text-left">
+                  📋 Facturation & Répartition Détaillée Légale RDC :
+                </span>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+                  
+                  {/* Left: Driver Net */}
+                  <div className="space-y-2 text-left pt-2 md:pt-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                      <span className="text-[9.5px] font-black text-cyan-400 uppercase font-sans">Compte Net du Chauffeur (Motard)</span>
+                    </div>
+                    
+                    <div className="space-y-1 text-[10px] leading-normal">
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Versement Brut Client :</span>
+                        <span className="text-slate-300 font-bold">{calcAmount.toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Commission GoMoto RDC (15%) :</span>
+                        <span className="text-orange-400">-{(calcAmount * 0.15).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Quote-part Propriétaire ({calcOwnerPercent}%) :</span>
+                        <span className="text-amber-500">-{(calcAmount * calcOwnerPercent / 100).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Frais d'Essence ({fuelPaidBy === "driver" ? "100%" : fuelPaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-400">-{((fuelPaidBy === "driver" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Frais d'Entretien ({maintenancePaidBy === "driver" ? "100%" : maintenancePaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-400">-{((maintenancePaidBy === "driver" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+
+                      <div className="border-t border-slate-800 pt-2 flex justify-between items-center text-xs mt-3">
+                        <span className="font-sans font-black text-white text-[10px] uppercase">Reste net en poche :</span>
+                        <span className="text-emerald-400 font-extrabold text-[12.5px]">
+                          {Math.max(0, calcAmount - (calcAmount * 0.15) - (calcAmount * calcOwnerPercent / 100) - ((fuelPaidBy === "driver" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount) - ((maintenancePaidBy === "driver" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount)).toLocaleString("fr-FR")} {calcCurrency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Owner Net */}
+                  <div className="space-y-2 text-left pt-3 md:pt-0 md:pl-5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-yellow-500"></span>
+                      <span className="text-[9.5px] font-black text-yellow-500 uppercase font-sans">Compte Net du Propriétaire de Fleet</span>
+                    </div>
+
+                    <div className="space-y-1 text-[10px] leading-normal">
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Versement Brut Reçu :</span>
+                        <span className="text-slate-300 font-bold">{(calcAmount * calcOwnerPercent / 100).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Soutien Carburant ({fuelPaidBy === "owner" ? "100%" : fuelPaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-405">-{((fuelPaidBy === "owner" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Prise en charge Vidange ({maintenancePaidBy === "owner" ? "100%" : maintenancePaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-405">-{((maintenancePaidBy === "owner" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+
+                      <div className="border-t border-slate-800 pt-2 flex justify-between items-center text-xs mt-3">
+                        <span className="font-sans font-black text-white text-[10px] uppercase">Bénéfice net investisseur :</span>
+                        <span className="text-cyan-400 font-extrabold text-[12.5px]">
+                          {Math.max(0, (calcAmount * calcOwnerPercent / 100) - ((fuelPaidBy === "owner" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount) - ((maintenancePaidBy === "owner" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount)).toLocaleString("fr-FR")} {calcCurrency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <div className="border-t border-slate-850 pt-2 text-center text-[8px] text-slate-500 font-sans uppercase">
+                  ✓ Calcul validé conformément aux CGU de GoMoto RDC • Convivialité contractuelle
+                </div>
+              </div>
+            </div>
+
             {/* Transactions lists */}
             <div className="space-y-3">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -924,23 +1385,36 @@ export default function OwnerDashboard({
               <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
                 <div className="divide-y divide-slate-850">
                   {transactions.map((tx) => (
-                    <div key={tx.id} className="p-3 bg-slate-900/40 flex justify-between items-center text-xs hover:bg-slate-900/80 transition-all">
-                      <div className="flex items-center gap-3">
-                        <span className={`h-2.5 w-2.5 rounded-full ${tx.type === 'withdrawal' ? 'bg-amber-400' : 'bg-emerald-500'}`}></span>
+                    <div key={tx.id} className="p-3 bg-slate-900/40 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 text-xs hover:bg-slate-900/80 transition-all">
+                      <div className="flex items-start gap-3 text-left">
+                        <span className={`h-2.5 w-2.5 rounded-full mt-1 shrink-0 ${tx.type === 'withdrawal' ? 'bg-amber-400' : 'bg-emerald-500'}`}></span>
                         <div>
-                          <span className="font-extrabold text-slate-200">
+                          <span className="font-extrabold text-slate-200 block">
                             {tx.type === "withdrawal" ? "Retrait propriétaire" : "Versement de course par flotte"}
                           </span>
                           <span className="text-[9px] text-slate-500 block mt-0.5">{tx.date} • {tx.method}</span>
+                          
+                          {/* Rich automatic breakdown for owners */}
+                          {tx.type !== "withdrawal" ? (
+                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[8.5px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-900 leading-none">
+                              <span>GoMoto (15%) : <b className="text-orange-400">-{Math.round(tx.amount * 0.15).toLocaleString()} {tx.currency}</b></span>
+                              <span>•</span>
+                              <span>Part Flotte (Brut) : <b className="text-amber-500">{Math.round(tx.amount * 0.20).toLocaleString()} {tx.currency}</b></span>
+                            </div>
+                          ) : (
+                            <div className="mt-1 text-[8.5px] font-mono text-slate-500 italic">
+                              Retrait vers Mobile Money • Aucun frais d'investisseur appliqué
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <div className="text-right font-mono text-xs">
-                        <span className={`font-bold ${tx.type === 'withdrawal' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      <div className="text-right font-mono text-xs shrink-0 self-end sm:self-center">
+                        <span className={`font-bold block ${tx.type === 'withdrawal' ? 'text-amber-400' : 'text-emerald-400'}`}>
                           {tx.type === "withdrawal" ? "-" : "+"}
                           {tx.amount.toLocaleString()} {tx.currency}
                         </span>
-                        <span className="text-[8px] block text-slate-500 uppercase font-bold tracking-widest mt-0.5">Validé</span>
+                        <span className="text-[8px] block text-slate-500 uppercase font-black tracking-widest mt-0.5">Validé d'État</span>
                       </div>
                     </div>
                   ))}
@@ -948,6 +1422,300 @@ export default function OwnerDashboard({
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* ================= TAB 5: FLEET ANALYTICAL INTELLIGENCE DASHBOARD ================= */}
+        {activeTab === "analytique" && (
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 text-left">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-yellow-500 animate-pulse" />
+                  <span className="text-[10px] font-black text-slate-400 tracking-wider uppercase font-sans">State Fleet Intelligence Engine v2.0</span>
+                </div>
+                <h3 className="font-extrabold text-white text-base tracking-tight font-sans">
+                  Analyse Portefeuille & Performance de la Flotte
+                </h3>
+                <p className="text-[10px] text-slate-400 font-sans max-w-xl">
+                  Visualisez en temps réel les revenus de vos motos partenaires, simulez vos gains prévisionnels et exportez vos états financiers certifiés sous format PDF.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadAnalyticalPDF}
+                className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg hover:shadow-yellow-500/15 group shrink-0"
+              >
+                <Download className="w-4 h-4 text-slate-950 group-hover:translate-y-0.5 transition-transform" />
+                <span>Télécharger Rapport PDF</span>
+              </button>
+            </div>
+
+            {/* Quick Metrics Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-850">
+                <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block font-sans">Motos Activées</span>
+                <span className="text-xl font-mono font-black text-slate-100 mt-1 block">
+                  {driversPerformance.length} Véhicules
+                </span>
+                <div className="flex items-center gap-1 mt-1 text-[9px] text-emerald-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span>Opérationnels à Kinshasa</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-850">
+                <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block font-sans">Revenu Cumulé Flotte</span>
+                <span className="text-xl font-mono font-black text-emerald-400 mt-1 block">
+                  {currentTotalGross.toLocaleString("fr-FR")} CDF
+                </span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">
+                  ~${(currentTotalGross / 2500).toFixed(1)} USD
+                </span>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-850">
+                <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block font-sans">Vos Commissions (15%)</span>
+                <span className="text-xl font-mono font-black text-yellow-500 mt-1 block">
+                  {Math.round(currentTotalGross * 0.15).toLocaleString("fr-FR")} CDF
+                </span>
+                <span className="text-[9px] text-slate-550 block mt-0.5">
+                  Note d'investisseur de gérant
+                </span>
+              </div>
+
+              <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-850">
+                <span className="text-[8px] font-extrabold text-slate-500 uppercase tracking-widest block font-sans">Moyenne / Moto</span>
+                <span className="text-xl font-mono font-black text-cyan-400 mt-1 block">
+                  {Math.round(currentTotalGross / (driversPerformance.length || 1)).toLocaleString("fr-FR")} CDF
+                </span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">
+                  Niveau d'activité optimal
+                </span>
+              </div>
+            </div>
+
+            {/* Main Interactive Interactive Chart Settings Bar */}
+            <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-850 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-850 pb-3">
+                <div className="flex flex-wrap gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setChartPeriod("daily")}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
+                      chartPeriod === "daily" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Gains Journaliers (Semaine)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartPeriod("monthly")}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-extrabold tracking-wider uppercase transition-all cursor-pointer ${
+                      chartPeriod === "monthly" ? "bg-yellow-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Gains Mensuels (Semestre)
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Currency selector toggle */}
+                  <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setChartCurrency("CDF")}
+                      className={`px-2.5 py-1 text-[9px] font-black rounded-lg transition-all cursor-pointer ${
+                        chartCurrency === "CDF" ? "bg-slate-750 text-white" : "text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      CDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartCurrency("USD")}
+                      className={`px-2.5 py-1 text-[9px] font-black rounded-lg transition-all cursor-pointer ${
+                        chartCurrency === "USD" ? "bg-slate-750 text-white" : "text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      USD
+                    </button>
+                  </div>
+
+                  {/* Profit metric selection */}
+                  <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setChartMetric("gross")}
+                      className={`px-2.5 py-1 text-[9px] font-black rounded-lg transition-all cursor-pointer ${
+                        chartMetric === "gross" ? "bg-emerald-950/40 text-emerald-400 border border-emerald-900/30" : "text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      Brut Flotte
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartMetric("commission")}
+                      className={`px-2.5 py-1 text-[9px] font-black rounded-lg transition-all cursor-pointer ${
+                        chartMetric === "commission" ? "bg-yellow-950/45 text-yellow-400 border border-yellow-905/30" : "text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      Commissions (15%)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart stage container */}
+              <div className="h-64 sm:h-72 w-full font-sans">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartPeriod === "daily" ? dailyData : monthlyData}
+                    margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.3} />
+                    <XAxis 
+                      dataKey={chartPeriod === "daily" ? "day" : "month"} 
+                      stroke="#64748b" 
+                      fontSize={10} 
+                      tickLine={false}
+                    />
+                    <YAxis 
+                      stroke="#64748b" 
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => {
+                        if (chartCurrency === "USD") return `$${value}`;
+                        if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+                        if (value >= 1000) return `${(value / 1000).toFixed(0)}k`;
+                        return value;
+                      }}
+                    />
+                    <RechartsTooltip 
+                      cursor={{ fill: '#334155', opacity: 0.15 }}
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        color: '#f8fafc',
+                        fontFamily: 'monospace'
+                      }}
+                      formatter={(value: number) => {
+                        const label = chartMetric === "gross" ? "Revenu Brut Flotte" : "Votre Commission (15%)";
+                        return [
+                          `${value.toLocaleString("fr-FR")} ${chartCurrency === "CDF" ? "CDF" : "USD"}`,
+                          label
+                        ];
+                      }}
+                    />
+                    <RechartsLegend 
+                      wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} 
+                    />
+                    <Bar 
+                      dataKey={
+                        chartMetric === "gross" 
+                          ? (chartCurrency === "CDF" ? "grossCDF" : "grossUSD") 
+                          : (chartCurrency === "CDF" ? "commCDF" : "commUSD")
+                      } 
+                      name={chartMetric === "gross" ? "Gains Bruts Totaux" : "Commissions Investisseur Gérant (15%)"}
+                      radius={[4, 4, 0, 0]}
+                    >
+                      {(chartPeriod === "daily" ? dailyData : monthlyData).map((entry, index) => {
+                        // Highlight current month or today
+                        const isCurrent = chartPeriod === "daily" ? entry.day.includes("Auj.") : entry.month === "Juin";
+                        return (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={
+                              chartMetric === "gross" 
+                                ? (isCurrent ? "#10b981" : "#059669") 
+                                : (isCurrent ? "#f59e0b" : "#d97706")
+                            } 
+                          />
+                        );
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Live telemetry tracking indicator */}
+              <div className="flex items-center justify-between text-[9px] text-slate-500 font-sans px-1">
+                <span>Calculateur de flux financiers synchrone avec le portefeuille d'État</span>
+                <span className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  Mise à jour en temps réel: {new Date().toLocaleTimeString("fr-CD")}
+                </span>
+              </div>
+            </div>
+
+            {/* Share and contribution of drivers widgets */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-wider font-sans">Répartition du Chiffre d'Affaire</h4>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed font-sans">
+                  Sur GoMoto RDC, l'équilibre coopératif garantit d'excellentes rémunérations aux motards tout en assurant d'importants retours sur investissement pour vous :
+                </p>
+
+                <div className="space-y-2 font-mono text-[10.5px]">
+                  <div className="p-2 border border-slate-850 bg-slate-900/50 rounded-lg flex justify-between items-center">
+                    <div className="space-y-0.5">
+                      <span className="text-slate-400 font-bold block">Part Congolaise Chauffeur (85%)</span>
+                      <span className="text-[9px] text-slate-500 font-sans block">Régulé pour faire face au coût du carburant</span>
+                    </div>
+                    <span className="text-emerald-400 font-extrabold">
+                      {Math.round(currentTotalGross * 0.85).toLocaleString("fr-FR")} CDF
+                    </span>
+                  </div>
+
+                  <div className="p-2 border border-slate-850 bg-slate-900/50 rounded-lg flex justify-between items-center">
+                    <div className="space-y-0.5">
+                      <span className="text-yellow-400 font-bold block">Votre Rémunération Net (15%)</span>
+                      <span className="text-[9px] text-slate-500 font-sans block">Disponible pour retrait immédiat mobile money</span>
+                    </div>
+                    <span className="text-yellow-500 font-extrabold">
+                      {Math.round(currentTotalGross * 0.15).toLocaleString("fr-FR")} CDF
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-wider font-sans">Efficacité Globale de la Flotte</h4>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed font-sans">
+                  Suivez les indicateurs de satisfaction voyageuse de votre flotte d'actifs sur l'ensemble des communes de Kinshasa :
+                </p>
+
+                <div className="grid grid-cols-2 gap-2 text-center font-sans">
+                  <div className="bg-slate-900 border border-slate-850 p-2.5 rounded-xl">
+                    <span className="text-[8px] font-bold text-slate-500 block uppercase">Satisfaction Moyenne</span>
+                    <span className="text-sm font-black text-yellow-500 block mt-1">4.9 / 5.0</span>
+                    <span className="text-[8px] text-slate-600">Basé sur les derniers avis</span>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-850 p-2.5 rounded-xl">
+                    <span className="text-[8px] font-bold text-slate-500 block uppercase">Courses Terminées</span>
+                    <span className="text-sm font-black text-cyan-400 block mt-1">
+                      {driversPerformance.reduce((sum, d) => sum + d.totalRides, 0)} courses
+                    </span>
+                    <span className="text-[8px] text-slate-600">District Kinshasa</span>
+                  </div>
+                </div>
+
+                <p className="text-[8.5px] text-slate-600 italic text-center pt-1 leading-snug">
+                  *Un chauffeur partenaire maintenant une note inférieure à 4.6 peut être temporairement suspendu pour recyclage routier par la PNC.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1112,27 +1880,374 @@ export default function OwnerDashboard({
                 </div>
               </div>
 
-              {/* Core advisory banner for owner */}
-              <div className="bg-yellow-500/10 border border-yellow-500/25 p-4 rounded-xl text-slate-350 space-y-2">
-                <span className="font-bold text-yellow-500 flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider">
-                  <ShieldAlert className="w-4 h-4 text-yellow-500" />
-                  <span>Instruction Impérative Relativo GoMoto RDC :</span>
-                </span>
-                <p className="text-[10.5px] text-slate-300 leading-normal font-sans">
-                  En tant que Propriétaire légal, il est strictement obligatoire de demander à votre chauffeur motard désigné <b className="text-yellow-400">{designatedDriverName || "(spécifié ci-dessus)"}</b> d'effectuer également à son tour sa propre demande d'affiliation et d'inscription en direct sur la plateforme <span className="text-yellow-400 font-extrabold">GoMoto RDC</span>. Les enrôlements doubles croisés sont l'unique moyen de valider l'historique d'audit d'État.
-                </p>
+              {/* ================= INTERACTIVE DOUBLE-ENROLLMENT & STATE AUDIT SECTION ================= */}
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-855 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div className="space-y-1">
+                    <span className="font-extrabold text-yellow-500 flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-mono">
+                      <ShieldAlert className="w-4 h-4 text-yellow-500 animate-pulse" />
+                      <span>Protocole d'Audit d'État & Double Enrôlement Croisé</span>
+                    </span>
+                    <p className="text-[10px] text-slate-350 leading-normal max-w-2xl font-sans">
+                      Conformément aux décrets de régulation des transports urbains en RDC, tout rapprochement d'actifs exige un <b>double enrôlement réciproque</b>. En tant que Propriétaire légal, vous devez obligatoirement communiquer ce code d'affiliation sécurisé ci-dessous à votre chauffeur motard désigné : <b className="text-yellow-400">{designatedDriverName || "(spécifié à la désignation)"}</b>. Ce dernier devra le saisir sur son propre panneau d'administration GoMoto RDC pour authentifier de concert votre flotte.
+                    </p>
+                  </div>
+                  <div>
+                    {crossEnrollmentStatus === "confirmed" ? (
+                      <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-black text-[9px] tracking-wider uppercase font-mono flex items-center gap-1 shrink-0 shadow-sm shadow-emerald-500/5">
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Validé par l'État</span>
+                      </span>
+                    ) : (
+                      <span className="bg-amber-950/80 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-xl font-black text-[9px] tracking-wider uppercase font-mono flex items-center gap-1.5 shrink-0 animate-pulse">
+                        <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+                        <span>Attente Pilote</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {enrollmentCode ? (
+                  <div className="space-y-3 pt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                      <div className="md:col-span-2">
+                        <div className="p-3 bg-slate-90 w-full rounded-xl border border-slate-800 flex justify-between items-center group relative hover:border-yellow-500/20 transition-all">
+                          <div className="space-y-0.5 text-left">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block font-mono">CODE DE VALIDATION DE L'AUDIT NATIONAL</span>
+                            <span className="font-mono text-[13px] font-black text-yellow-400 tracking-wider block">{enrollmentCode}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(enrollmentCode);
+                              setIsCodeCopied(true);
+                              setTimeout(() => setIsCodeCopied(false), 2000);
+                            }}
+                            className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-750 hover:border-slate-700 px-3 py-1.5 rounded-lg text-[9.5px] font-extrabold uppercase transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-yellow-400" />
+                            <span>{isCodeCopied ? "Copié !" : "Copier"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="w-full">
+                        <button
+                          type="button"
+                          disabled={isSendingCode || !designatedDriverName.trim()}
+                          onClick={() => {
+                            setIsSendingCode(true);
+                            setTimeout(() => {
+                              setIsSendingCode(false);
+                              setCodeSentMessage(`✓ Transmission automatisée réussie ! Le code de souveraineté d'État ${enrollmentCode} a été notifié par SMS et messagerie cryptée au chauffeur désigné (${designatedDriverName}) au dossier.`);
+                              setTimeout(() => setCodeSentMessage(""), 8000);
+                            }, 1500);
+                          }}
+                          className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed font-extrabold py-3 px-4 rounded-xl text-[10.5px] uppercase transition-all flex items-center justify-center gap-2 cursor-pointer shadow-inner"
+                        >
+                          {isSendingCode ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin" />
+                              <span>Envoi en cours...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-3.5 h-3.5 text-yellow-500" />
+                              <span>Notifier par SMS / Courriel</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {codeSentMessage && (
+                      <div className="bg-emerald-950/60 border border-emerald-500/20 p-3 rounded-xl text-[10px] text-emerald-350 leading-relaxed text-left flex items-start gap-2 animate-fadeIn">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <span>{codeSentMessage}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-850 text-center text-[10px] text-slate-450 italic">
+                    ⚠️ Le code de double enrôlement d'audit s'affichera ici une fois l'affiliation de votre chauffeur désigné enregistrée ci-dessous.
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end pt-2">
                 <button
                   type="submit"
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 px-6 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 px-6 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md cursor-pointer uppercase font-mono tracking-wider"
                 >
-                  <FileCheck className="w-3.5 h-3.5" />
-                  <span>Enregistrer l'Affiliation du Chauffeur</span>
+                  <FileCheck className="w-4 h-4" />
+                  <span>Enregistrer l'Affiliation & Générer le Code</span>
                 </button>
               </div>
             </form>
+
+            {/* ================= SECTION CONFORMITÉ GOUVERNEMENTALE (DOCUMENTS REQUIS) ================= */}
+            <div className="border-t border-slate-800 pt-5 space-y-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-855">
+                <div>
+                  <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-emerald-400" />
+                    <span>Conformité Fiscale & Pièces d'Exploitation</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Fourniture obligatoire des pièces gouvernementales exigées par l'Hôtel de Ville de Kinshasa</p>
+                </div>
+                {/* Visual state progress rating */}
+                <div className="flex flex-col items-end">
+                  <span className="text-[11px] font-black text-emerald-400 font-mono">
+                    {govDocs.filter((d: any) => d.status === "approved").length} / 5 Validés
+                  </span>
+                  <div className="w-24 bg-slate-800 h-1.5 rounded-full mt-1 overflow-hidden">
+                    <div 
+                      className="bg-emerald-400 h-full transition-all duration-500" 
+                      style={{ width: `${(govDocs.filter((d: any) => d.status === "approved").length / 5) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid checklists of regulatory expectations */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {[
+                  { key: "carte_rose", label: "Certificat d'Immatriculation", desc: "La Carte Rose d'État pour attester la propriété légale de la moto." },
+                  { key: "permis_exploitation", label: "Autorisation de Transport", desc: "Permis délivré par le Ministère urbain des Transports." },
+                  { key: "visite_technique", label: "Contrôle Technique", desc: "Attestation de contrôle de sécurité de la voirie routière." },
+                  { key: "assurance_moto", label: "Assurance R.C. Propriétaire", desc: "Couverture d'assurance obligatoire auprès de la SONAS ou agréée." },
+                  { key: "vignette_fiscale", label: "Vignette Fiscale", desc: "Paiement de la taxe fiscale de circulation urbaine annuelle." }
+                ].map((req) => {
+                  const submittedDoc = govDocs.find((d: any) => d.type === req.key);
+                  const isSubmitted = !!submittedDoc;
+                  const isApproved = submittedDoc?.status === "approved";
+                  const isPending = submittedDoc?.status === "pending";
+                  const isRejected = submittedDoc?.status === "rejected";
+
+                  return (
+                    <div 
+                      key={req.key} 
+                      className={`p-3.5 rounded-xl border text-left transition-all relative ${
+                        isApproved 
+                          ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-100" 
+                          : isPending 
+                          ? "bg-amber-955/20 border-amber-500/25 text-amber-105" 
+                          : isRejected 
+                          ? "bg-rose-955/20 border-rose-500/25 text-rose-100" 
+                          : "bg-slate-950/40 border-slate-850 text-slate-350"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wide block truncate pr-4 font-sans">
+                          {req.label}
+                        </span>
+                        <span>
+                          {isApproved ? (
+                            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                          ) : isPending ? (
+                            <Clock className="w-4 h-4 text-amber-500 shrink-0 animate-pulse" />
+                          ) : isRejected ? (
+                            <X className="w-4 h-4 text-rose-500 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 text-slate-600 shrink-0" />
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-[9.5px] text-slate-400 mt-1 leading-normal">
+                        {req.desc}
+                      </p>
+                      <div className="mt-2.5 flex justify-between items-center text-[8.5px] font-mono uppercase">
+                        <span className="text-slate-500">Statut :</span>
+                        <span className={`font-black tracking-wide ${
+                          isApproved ? "text-emerald-400" : isPending ? "text-amber-500" : isRejected ? "text-rose-400" : "text-slate-500"
+                        }`}>
+                          {isApproved ? "Approuvé d'État" : isPending ? "Commission d'Audit" : isRejected ? "Rejeté (Erreur)" : "Non Soumis"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Submitting form */}
+              <div className="bg-slate-950/60 p-5 rounded-2xl border border-slate-850 space-y-4 text-left">
+                <span className="text-[10px] font-extrabold text-yellow-500 uppercase tracking-widest block font-mono">
+                  Transmettre une nouvelle pièce d'exploitation étatique
+                </span>
+
+                {govDocFeedback && (
+                  <div className="bg-emerald-900/40 border border-emerald-500/30 p-3 rounded-xl text-xs text-emerald-400 flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-450 shrink-0" />
+                    <span>{govDocFeedback}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleAddGovDoc} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                  <div className="space-y-1">
+                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block">Nature de la Pièce légale *</label>
+                    <select
+                      value={govDocType}
+                      onChange={(e) => setGovDocType(e.target.value)}
+                      className="w-full bg-slate-90 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-yellow-500 cursor-pointer"
+                    >
+                      <option value="carte_rose">Certificat d'Immatriculation (La Carte Rose)</option>
+                      <option value="permis_exploitation">Autorisation de Transport (Permis d'Exploitation)</option>
+                      <option value="visite_technique">Certificat d'Avis de Contrôle Technique</option>
+                      <option value="assurance_moto">Certificat d'Assurance R.C. Auto (SONAS)</option>
+                      <option value="vignette_fiscale">Preuve de Paiement Vignette de Kinshasa</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block">Référence / Numéro d'Enregistrement *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: C0-REG-5524A-KIN"
+                      value={govDocNumber}
+                      onChange={(e) => setGovDocNumber(e.target.value)}
+                      className="w-full bg-slate-90 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-yellow-500 font-bold placeholder-slate-700"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block">Date d'Émission Légale *</label>
+                    <input
+                      type="date"
+                      required
+                      value={govDocIssueDate}
+                      onChange={(e) => setGovDocIssueDate(e.target.value)}
+                      className="w-full bg-slate-90 border border-slate-800 rounded-xl px-3 py-2 text-[10px] text-white outline-none focus:border-yellow-500 cursor-pointer font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block">Date d'Expiration Administrative *</label>
+                    <input
+                      type="date"
+                      required
+                      value={govDocExpiryDate}
+                      onChange={(e) => setGovDocExpiryDate(e.target.value)}
+                      className="w-full bg-slate-90 border border-slate-800 rounded-xl px-3 py-2 text-[10px] text-white outline-none focus:border-yellow-500 cursor-pointer font-bold"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2 lg:col-span-3 space-y-1 font-sans">
+                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block">Preuve Numérique du Document (Photo / Scan JPEG / PDF) *</label>
+                    <div className="relative flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Chemin d'accès ou URL de la pièce scannée..."
+                        value={govDocPhoto}
+                        onChange={(e) => setGovDocPhoto(e.target.value)}
+                        className="w-full bg-slate-90 border border-slate-800 rounded-xl pl-3.5 pr-24 py-2.5 text-xs text-white outline-none focus:border-yellow-500 placeholder-slate-650 font-bold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randRef = Math.floor(1000 + Math.random() * 9000);
+                          setGovDocPhoto(`https://images.unsplash.com/photo-15544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=350&rand=${randRef}`);
+                        }}
+                        className="absolute right-1 top-1 bottom-1 bg-slate-800 hover:bg-slate-700 text-yellow-500 border border-slate-700 px-3 py-1 rounded-lg text-[9px] font-bold uppercase transition cursor-pointer"
+                      >
+                        Scanner Auto
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2 lg:col-span-1">
+                    <button
+                      type="submit"
+                      className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer uppercase font-mono tracking-wide"
+                    >
+                      <Plus className="w-4 h-4 shrink-0" />
+                      <span>Soumettre la Pièce</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* History list of submitted documents */}
+              {govDocs.length > 0 && (
+                <div className="space-y-2.5 text-left pt-1">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-mono">
+                    Registre des Soumissions Officielles (Hôtel de Ville)
+                  </span>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-850 bg-slate-955/20">
+                    <table className="w-full text-xs text-slate-300">
+                      <thead>
+                        <tr className="bg-slate-950/80 border-b border-slate-850 text-slate-400 text-[9.5px] font-black uppercase tracking-wider text-left">
+                          <th className="py-2.5 px-4">Document</th>
+                          <th className="py-2.5 px-4">Référence</th>
+                          <th className="py-2.5 px-4">Validité émise</th>
+                          <th className="py-2.5 px-4">Expiration</th>
+                          <th className="py-2.5 px-4 text-center">Statut d'Audit</th>
+                          <th className="py-2.5 px-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/60 font-medium font-sans">
+                        {govDocs.map((doc: any) => {
+                          const isExpired = new Date(doc.expiryDate) < new Date("2026-06-12");
+                          return (
+                            <tr key={doc.id} className="hover:bg-slate-900/30 transition">
+                              <td className="py-3 px-4">
+                                <div className="font-extrabold text-slate-100 text-xs">{doc.typeName}</div>
+                                <div className="text-[8.5px] text-slate-500 font-mono mt-0.5">Transmis le : {doc.submittedAt}</div>
+                              </td>
+                              <td className="py-3 px-4 font-mono font-bold text-yellow-500 text-[11px]">{doc.docNumber}</td>
+                              <td className="py-3 px-4 font-mono text-[10px]">{doc.issueDate}</td>
+                              <td className="py-3 px-4 font-mono">
+                                <span className={`text-[10px] ${isExpired ? "text-rose-450 font-extrabold animate-pulse" : "text-slate-300"}`}>
+                                  {doc.expiryDate} {isExpired && "⚠️ Expiré !"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <span className={`inline-block px-2.5 py-0.5 rounded text-[8.5px] font-mono tracking-wide font-black uppercase border ${
+                                  doc.status === "approved" 
+                                    ? "bg-emerald-950/70 border-emerald-500/20 text-emerald-400" 
+                                    : doc.status === "pending" 
+                                    ? "bg-amber-950/70 border-amber-500/20 text-amber-500" 
+                                    : "bg-rose-950/70 border-rose-500/20 text-rose-400"
+                                }`}>
+                                  {doc.status === "approved" ? "Approuvé d'État" : doc.status === "pending" ? "Commission d'Audit" : "Rejeté / À refaire"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <div className="flex justify-end gap-2">
+                                  {doc.photoUrl && (
+                                    <a 
+                                      href={doc.photoUrl} 
+                                      target="_blank" 
+                                      rel="noreferrer"
+                                      className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 p-1.5 rounded-lg text-[9px] transition inline-flex items-center gap-1 font-bold cursor-pointer"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>Visualiser</span>
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = govDocs.filter((d: any) => d.id !== doc.id);
+                                      setGovDocs(updated);
+                                      localStorage.setItem(`gomoto_owner_gov_docs_${profile.id}`, JSON.stringify(updated));
+                                    }}
+                                    className="bg-rose-950/30 hover:bg-rose-950/70 text-rose-455 hover:text-rose-300 border border-rose-500/10 hover:border-rose-500/30 p-1.5 rounded-lg text-[9px] transition cursor-pointer"
+                                  >
+                                    Supprimer
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Recours Submission area for owner */}
             <div className="border-t border-slate-800 pt-5 space-y-4">

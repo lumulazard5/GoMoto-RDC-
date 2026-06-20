@@ -150,64 +150,56 @@ export default function MobileAppDownload() {
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
                   <div className="flex flex-wrap justify-between items-center gap-2">
                     <div>
-                      <span className="text-[10px] text-slate-400 font-mono block">FICHIER CONGOLAIS CERTIFIÉ :</span>
+                      <span className="text-[10px] text-slate-400 font-mono block">MODE DE DÉVELOPPEMENT ACTUEL :</span>
                       <span className="text-xs font-extrabold font-mono text-slate-700">
-                        GoMoto_RDC_v2.8.5_prod.apk
+                        Application Générée via AI Studio (Web/PWA)
                       </span>
                     </div>
-                    <span className="text-[10px] font-bold bg-slate-100 text-slate-650 px-2 py-0.5 rounded border">
-                      Taille : 18.4 Mo
-                    </span>
                   </div>
 
-                  {!downloading && !downloadFinished ? (
-                    <button
-                      type="button"
-                      onClick={startApkDownload}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Télécharger l'APK Direct de GoMoto (Gratuit - 18 Mo)</span>
-                    </button>
-                  ) : downloading ? (
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
-                        <span>Téléchargement de l'APK en cours...</span>
-                        <span>{downloadProgress}%</span>
-                      </div>
-                      <div className="w-full bg-slate-150 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-emerald-500 h-full transition-all duration-150"
-                          style={{ width: `${downloadProgress}%` }}
-                        />
-                      </div>
-                      <p className="text-[9px] text-slate-400 text-center italic">
-                        Connexion sécurisée aux serveurs miroirs de Kinshasa et Lubumbashi...
-                      </p>
+                  <div className="bg-emerald-50/60 border border-emerald-250 p-3.5 rounded-xl text-xs space-y-3 text-left">
+                    <div className="flex items-center gap-2 text-emerald-800 font-black">
+                      <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                      <span>Comment obtenir un véritable fichier .APK ?</span>
                     </div>
-                  ) : (
-                    <div className="bg-emerald-50/60 border border-emerald-250 p-3.5 rounded-xl text-xs space-y-2 text-left">
-                      <div className="flex items-center gap-2 text-emerald-800 font-black">
-                        <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                        <span>Téléchargement de l'APK Réussi !</span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 leading-normal">
-                        Le fichier <b>GoMoto_RDC_v2.8.5_prod.apk</b> a été téléchargé avec succès sur votre stockage local. Pour l'installer sur votre téléphone de marque Infinix, Tecno ou autre, activez simplement l'option <i>"Autoriser l'installation d'applications de sources inconnues"</i> dans vos paramètres de sécurité Android.
-                      </p>
-                      <div className="pt-1.5 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setDownloadFinished(false)}
-                          className="text-[9px] bg-white border border-slate-200 text-slate-600 px-2.5 py-1 rounded hover:bg-slate-50 font-bold"
-                        >
-                          Réinstaller / Recommencer
-                        </button>
-                        <span className="text-[8.5px] text-slate-450 self-center font-mono uppercase bg-slate-100 rounded px-1.5 py-0.5">
-                          MD5: bd2a18f40776bbecda8e
-                        </span>
-                      </div>
+                    <p className="text-[11px] text-slate-600 leading-normal">
+                      Puisque cette application est construite dans <b>Google AI Studio</b>, elle fonctionne actuellement comme une <b>Progressive Web App (PWA)</b> très performante qui peut s'installer sur votre téléphone comme une vraie application (voir l'onglet "Mode Web / Tablette").
+                      <br /><br />
+                      Pour l'encapsuler dans une application Native (.APK) via <b>Java ou Kotlin</b> :
+                    </p>
+                    <ol className="list-decimal pl-5 space-y-1.5 text-slate-700 text-[11px] leading-relaxed font-medium">
+                      <li>Cliquez sur l'icône "Share" (Partager / Settings) en haut à droite d'AI Studio puis choisissez <b>Download as ZIP</b> pour avoir tout le code source généré.</li>
+                      <li>Dans Android Studio, créez un nouveau projet (Empty Views Activity).</li>
+                      <li>Collez le code suivant dans votre <code>MainActivity.kt</code> pour encapsuler l'application via un WebView :</li>
+                    </ol>
+                    <div className="mt-3">
+                      <pre className="bg-slate-900 text-emerald-400 p-3 rounded-xl text-[9px] overflow-x-auto font-mono scrollbar-thin shadow-inner border border-slate-800">
+{`// MainActivity.kt (Kotlin)
+import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.appcompat.app.AppCompatActivity
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val webView = WebView(this)
+        
+        // Configuration essentielle pour faire tourner React/Vite
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        webView.webViewClient = WebViewClient()
+        
+        // Hébergez le code React généré sur Firebase ou Vercel
+        // puis insérez l'URL ici :
+        webView.loadUrl("URL_DE_VOTRE_APP_GOMOTO") 
+        
+        setContentView(webView)
+    }
+}`}
+                      </pre>
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
 

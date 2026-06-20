@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Information about a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string", "enum": ["client", "driver", "owner", "admin"] },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "walletBalanceCDF": { "type": "number" },
+        "walletBalanceUSD": { "type": "number" },
+        "isRegistered": { "type": "boolean" },
+        "isOnline": { "type": "boolean" }
+      },
+      "required": ["id", "role", "email"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Wallet transaction.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "userId", "amount"]
+    },
+    "Ride": {
+      "title": "Ride",
+      "description": "A ride request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "clientId"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutably records administrative and sensitive state changes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "adminId": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "adminName": { "type": "string" },
+        "action": { "type": "string" },
+        "targetId": { "type": "string" },
+        "targetName": { "type": "string" },
+        "details": { "type": "string" },
+        "payloadBefore": { "type": "object" },
+        "payloadAfter": { "type": "object" }
+      },
+      "required": ["id", "timestamp", "adminId", "adminEmail", "adminName", "action", "targetId", "targetName", "details"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles"
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Transactions"
+    },
+    "/rides/{rideId}": {
+      "schema": { "$ref": "#/entities/Ride" },
+      "description": "Rides"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable centralized audit and administrative logs"
+    }
+  }
+}

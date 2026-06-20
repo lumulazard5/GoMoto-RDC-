@@ -39,15 +39,18 @@ import {
   Cpu,
   CheckCircle2,
   XCircle,
-  RefreshCw
+  RefreshCw,
+  ShieldAlert
 } from "lucide-react";
 
 interface RegistrationFlowProps {
   onCompleteRegistration: (profile: UserProfile) => void;
   lang?: AppLanguage;
+  userEmail?: string | null;
+  userId?: string;
 }
 
-export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }: RegistrationFlowProps) {
+export default function RegistrationFlow({ onCompleteRegistration, lang = "fr", userEmail, userId }: RegistrationFlowProps) {
   const [step, setStep] = useState<number>(1);
   const [selectedRole, setSelectedRole] = useState<UserRole>("client");
   
@@ -73,7 +76,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
   // Registration states
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(userEmail || "");
   const [phone, setPhone] = useState("+243 ");
   
   // Address selection states
@@ -97,12 +100,73 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
   // Camera capture states for Driver's License
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [cameraTarget, setCameraTarget] = useState<"front" | "back" | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<"front" | "back" | "profile" | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
-  const startCamera = async (target: "front" | "back") => {
+  // Document OCR Scanning Simulation States
+  const [ocrActive, setOcrActive] = useState(false);
+  const [ocrTarget, setOcrTarget] = useState<"front" | "back" | null>(null);
+  const [ocrStatusText, setOcrStatusText] = useState("");
+  const [ocrProgress, setOcrProgress] = useState(0);
+
+  const getDocLabel = () => {
+    switch (docType) {
+      case "carte_identite_nationale":
+        return "de la Carte d'Identité";
+      case "passeport":
+        return "du Passeport";
+      case "permis_de_conduire":
+        return "du Permis de Conduire";
+      case "document_etranger":
+        return "du Document Étranger";
+      default:
+        return "de la Pièce d'Identité";
+    }
+  };
+
+  const runDocumentOcrScan = (targetSide: "front" | "back") => {
+    setOcrActive(true);
+    setOcrTarget(targetSide);
+    setOcrProgress(15);
+    setOcrStatusText("Analyse des bordures de l'image & Amélioration du contraste...");
+
+    setTimeout(() => {
+      setOcrProgress(50);
+      setOcrStatusText("Extraction visuelle par l'IA Vision de GoMoto & Lecture du texte...");
+    }, 600);
+
+    setTimeout(() => {
+      setOcrProgress(80);
+      setOcrStatusText("Chiffrage de la signature numérique du document...");
+    }, 1200);
+
+    setTimeout(() => {
+      setOcrProgress(100);
+      setOcrActive(false);
+      setOcrTarget(null);
+
+      // Generate a highly realistic mock document number according to docType
+      let generatedNum = "";
+      const rand1 = Math.floor(100 + Math.random() * 900);
+      const rand2 = Math.floor(1000 + Math.random() * 9000);
+      const rand3 = Math.floor(100000 + Math.random() * 900000);
+      if (docType === "carte_identite_nationale") {
+        generatedNum = `CNI-NID.${rand1}.${rand2}.${rand3}`;
+      } else if (docType === "permis_de_conduire") {
+        generatedNum = `CD-PRM.${rand1}.${rand2}-XKP`;
+      } else if (docType === "passeport") {
+        generatedNum = `OP.CD.${rand3}.CD`;
+      } else {
+        generatedNum = `UN-REG-${rand3}`;
+      }
+
+      setDocNumber(generatedNum);
+    }, 1850);
+  };
+
+  const startCamera = async (target: "front" | "back" | "profile") => {
     setCameraError(null);
     setCapturedPreview(null);
     setCameraTarget(target);
@@ -111,7 +175,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
-          facingMode: "environment",
+          facingMode: target === "profile" ? "user" : "environment",
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
@@ -162,6 +226,143 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
     } catch (err) {
       console.error("Error capturing frame:", err);
     }
+  };
+
+  const renderLiveCameraViewport = () => {
+    if (!isCameraActive || !cameraTarget) return null;
+
+    return (
+      <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-5 shadow-inner space-y-4 animate-fade-in text-left my-4 w-full">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 bg-emerald-500 rounded-full animate-ping" />
+            <span className="text-xs font-black uppercase tracking-wider text-slate-200 font-mono">
+              {cameraTarget === "profile" 
+                ? "Objectif Selfie Actif (Photo Biométrique)" 
+                : `Objectif Caméra Actif (${cameraTarget === "front" ? "RECTO" : "VERSO"} - ${getDocLabel().toUpperCase()})`
+              }
+            </span>
+          </div>
+          <button 
+            type="button" 
+            onClick={stopCamera}
+            className="text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg px-2.5 py-1 transition-all text-[11px] font-bold cursor-pointer"
+          >
+            Annuler ✕
+          </button>
+        </div>
+
+        {/* Video Viewport / Capture frame */}
+        <div className="relative aspect-video max-w-md mx-auto bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center">
+          {capturedPreview ? (
+            <img referrerPolicy="no-referrer" src={capturedPreview} alt="Snapshot preview" className="w-full h-full object-cover" />
+          ) : (
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="w-full h-full object-cover" 
+            />
+          )}
+
+          {/* Centering overlay outline */}
+          {!capturedPreview && (
+            cameraTarget === "profile" ? (
+              <div className="absolute inset-0 border-2 border-dashed border-blue-400 rounded-full pointer-events-none m-8 flex flex-col justify-between p-2">
+                <p className="text-[10px] bg-blue-950/85 text-blue-300 font-extrabold px-3 py-1 rounded-full select-none text-center self-center tracking-wider max-w-[80%] uppercase font-sans border border-blue-400">
+                  Aligner votre visage de face
+                </p>
+              </div>
+            ) : (
+              <div className="absolute inset-0 border-2 border-dashed border-emerald-500 rounded-xl pointer-events-none m-4 sm:m-6 flex flex-col justify-between p-2">
+                <div className="flex justify-between">
+                  <div className="w-5 h-5 border-t-2 border-l-2 border-emerald-500" />
+                  <div className="w-5 h-5 border-t-2 border-r-2 border-emerald-500" />
+                </div>
+                <p className="text-[10px] bg-emerald-950/85 text-emerald-300 font-extrabold px-3 py-1 rounded-full select-none text-center self-center tracking-wider max-w-[80%] uppercase font-sans animate-pulse border border-emerald-500">
+                  Aligner le {cameraTarget === "front" ? "RECTO" : "VERSO"} {getDocLabel()}
+                </p>
+                <div className="flex justify-between">
+                  <div className="w-5 h-5 border-b-2 border-l-2 border-emerald-500" />
+                  <div className="w-5 h-5 border-b-2 border-r-2 border-emerald-500" />
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Captured preview tag */}
+          {capturedPreview && (
+            <div className="absolute inset-0 bg-emerald-950/20 flex items-center justify-center border border-emerald-500 rounded-xl">
+              <span className="bg-emerald-600 text-white font-extrabold text-[10px] uppercase tracking-wider px-3.5 py-1.5 rounded-lg shadow-md flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5" /> Prévisualisation du Cliché
+              </span>
+            </div>
+          )}
+        </div>
+
+        {cameraError && (
+          <div className="bg-red-950/45 border border-red-800 p-3 rounded-xl flex items-start gap-2 text-xs text-red-200">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <span>{cameraError}</span>
+          </div>
+        )}
+
+        {/* Actions buttons */}
+        <div className="flex gap-3 justify-center">
+          {capturedPreview ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setCapturedPreview(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700 shadow-sm"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-slate-200" />
+                <span>Reprendre la photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (cameraTarget === "front") {
+                    setDocFront(capturedPreview);
+                    runDocumentOcrScan("front");
+                  } else if (cameraTarget === "back") {
+                    setDocBack(capturedPreview);
+                    runDocumentOcrScan("back");
+                  } else if (cameraTarget === "profile") {
+                    setProfilePic(capturedPreview);
+                    setAiAnalysisStatus("idle");
+                  }
+                  stopCamera();
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2.5 px-5 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+              >
+                <Check className="w-4 h-4" />
+                <span>Valider & Utiliser ce cliché</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={stopCamera}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2 px-4 rounded-xl text-xs transition-all cursor-pointer border border-slate-700"
+              >
+                Fermer l'appareil
+              </button>
+              <button
+                type="button"
+                onClick={capturePhoto}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 px-6 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md"
+              >
+                <Camera className="w-4 h-4 animate-pulse" />
+                <span>Prendre la photo 📸</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -313,7 +514,11 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
       }
       setStep(2);
     } else if (step === 2) {
-      setStep(3);
+      if (selectedRole === "admin") {
+        submitRegistration();
+      } else {
+        setStep(3);
+      }
     } else if (step === 3) {
       // Personal info validation
       if (!firstName.trim() || !lastName.trim()) {
@@ -332,24 +537,26 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
       setErrorMsg("");
       setStep(4);
     } else if (step === 4) {
-      // All users (including clients) need ID documents
-      if (!docNumber.trim()) {
-        setErrorMsg("Le numéro du document d'identité est obligatoire.");
-        return;
-      }
-      if (!docFront || !docBack) {
-        setErrorMsg("Les photos recto et verso de votre document d'identité sont obligatoires.");
-        return;
-      }
+      if (selectedRole !== "admin") {
+        // All users (including clients) need ID documents
+        if (!docNumber.trim()) {
+          setErrorMsg("Le numéro du document d'identité est obligatoire.");
+          return;
+        }
+        if (!docFront || !docBack) {
+          setErrorMsg("Les photos recto et verso de votre document d'identité sont obligatoires.");
+          return;
+        }
 
-      // Everyone needs a profile pic and successful AI compliance report
-      if (!profilePic) {
-        setErrorMsg("La photo de profil est requise pour assurer la reconnaissance faciale.");
-        return;
-      }
-      if (aiAnalysisStatus !== "success") {
-        setErrorMsg("La photo de profil est requise et doit être validée par l'analyse automatique de conformité faciale par IA.");
-        return;
+        // Everyone needs a profile pic and successful AI compliance report
+        if (!profilePic) {
+          setErrorMsg("La photo de profil est requise pour assurer la reconnaissance faciale.");
+          return;
+        }
+        if (aiAnalysisStatus !== "success") {
+          setErrorMsg("La photo de profil est requise et doit être validée par l'analyse automatique de conformité faciale par IA.");
+          return;
+        }
       }
       submitRegistration();
     }
@@ -373,18 +580,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
     const baseCDF = selectedRole === "client" ? 25000 : 0;
     const baseUSD = selectedRole === "client" ? 10 : 0;
 
-    const uLastName = lastName.trim().toUpperCase() || "USER";
+    const uLastName = lastName.trim().toUpperCase() || (selectedRole === "admin" ? "ADMIN" : "USER");
     const cleanLastName = uLastName.replace(/[^A-Z]/g, "").slice(0, 7);
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     const generatedCode = `GOMOTO-${cleanLastName || "MEMBER"}-${randomSuffix}`;
 
     const newProfile: UserProfile = {
-      id: "usr-" + Math.random().toString(36).substr(2, 9),
+      id: userId || "usr-" + Math.random().toString(36).substr(2, 9),
       role: selectedRole,
       lastName: uLastName,
-      firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1),
+      firstName: firstName ? firstName.charAt(0).toUpperCase() + firstName.slice(1) : (selectedRole === "admin" ? "Système" : ""),
       email: email || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@gomoto-rdc.com`,
-      phone: phone.trim(),
+      phone: phone.trim() !== "+243" ? phone.trim() : "+243 000000000",
       address,
       walletBalanceCDF: baseCDF + referralBonusCDF,
       walletBalanceUSD: baseUSD + referralBonusUSD,
@@ -400,7 +607,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
       documentPhotoBack: docBack,
       profilePicture: profilePic,
       myReferralCode: generatedCode,
-      referredByCode: isReferred ? referredByCode.trim().toUpperCase() : undefined,
+      referredByCode: isReferred ? referredByCode.trim().toUpperCase() : null,
       referralCount: 0
     };
 
@@ -420,9 +627,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
       back: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
     };
 
-    if (type === "profile") setProfilePic(mockFiles.profile);
-    if (type === "front") setDocFront(mockFiles.front);
-    if (type === "back") setDocBack(mockFiles.back);
+    if (type === "profile") {
+      setProfilePic(mockFiles.profile);
+      setAiAnalysisStatus("idle");
+    }
+    if (type === "front") {
+      setDocFront(mockFiles.front);
+      runDocumentOcrScan("front");
+    }
+    if (type === "back") {
+      setDocBack(mockFiles.back);
+      runDocumentOcrScan("back");
+    }
   };
 
   const handleLocalFile = (e: React.ChangeEvent<HTMLInputElement>, type: "profile" | "front" | "back") => {
@@ -434,10 +650,13 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
       const b64 = reader.result as string;
       if (type === "profile") {
         setProfilePic(b64);
+        setAiAnalysisStatus("idle");
       } else if (type === "front") {
         setDocFront(b64);
+        runDocumentOcrScan("front");
       } else if (type === "back") {
         setDocBack(b64);
+        runDocumentOcrScan("back");
       }
     };
     reader.readAsDataURL(file);
@@ -632,7 +851,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                {activeDocTab === "cgu" && (
                  <div className="space-y-4 text-slate-600">
                    <div className="flex justify-between items-center text-[10px] text-slate-400">
-                     <span className="font-bold text-blue-600 uppercase">GoMoto Congo</span>
+                     <span className="font-bold text-blue-600 uppercase">GoMoto RDC</span>
                      <span>{generalTerms.lastUpdated}</span>
                    </div>
                    {generalTerms.sections.map((sect, i) => (
@@ -811,7 +1030,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
             {/* Quick role previews prior to selecting role */}
             <div className="space-y-2">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Choisir mon Profil final :</h4>
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid gap-2 ${(userEmail === 'aepisciculture@gmail.com' || userEmail === 'lumulazard5@gmail.com') ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'}`}>
                 <button
                   type="button"
                   onClick={() => setSelectedRole("client")}
@@ -842,6 +1061,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   <Building className="w-5 h-5" />
                   <span className="text-[10px]">Propriétaire</span>
                 </button>
+                {(userEmail === 'aepisciculture@gmail.com' || userEmail === 'lumulazard5@gmail.com') && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRole("admin")}
+                    className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                      selectedRole === "admin" ? "bg-red-50 border-red-600 text-red-700 font-bold" : "bg-slate-100 border-slate-300 text-slate-600 hover:bg-red-50"
+                    }`}
+                  >
+                    <ShieldAlert className="w-5 h-5" />
+                    <span className="text-[10px]">Administrateur</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -860,17 +1091,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
         {step === 2 && (
           <div className="space-y-6 text-center py-4">
             <div className="mx-auto bg-blue-50 h-20 w-20 rounded-full flex items-center justify-center text-blue-600 border border-blue-100 mb-2 shadow-inner">
-              {selectedRole === "client" ? <User className="w-9 h-9" /> : selectedRole === "driver" ? <Bike className="w-9 h-9" /> : <Building className="w-9 h-9" />}
+              {selectedRole === "client" ? <User className="w-9 h-9" /> : selectedRole === "driver" ? <Bike className="w-9 h-9" /> : selectedRole === "admin" ? <ShieldAlert className="w-9 h-9" /> : <Building className="w-9 h-9" />}
             </div>
             <div className="max-w-md mx-auto space-y-2">
               <h3 className="text-xl font-bold text-slate-800">Vous vous inscrivez en tant que :</h3>
               <div className="bg-blue-600 text-white px-4 py-2 rounded-xl inline-block font-bold tracking-wider uppercase text-xs">
-                {selectedRole === "client" ? "🚗 Passager (Client)" : selectedRole === "driver" ? "🏍️ Chauffeur de Taxi-Moto" : "💼 Propriétaire de Motos"}
+                {selectedRole === "client" ? "🚗 Passager (Client)" : selectedRole === "driver" ? "🏍️ Chauffeur de Taxi-Moto" : selectedRole === "admin" ? "🛡️ Administrateur Système" : "💼 Propriétaire de Motos"}
               </div>
               <p className="text-xs text-slate-650 mt-2 leading-relaxed">
                 {selectedRole === "client" && "Profitez de trajets sécurisés et rapides à travers toutes les communes de votre ville. Payez facilement via mobile money."}
                 {selectedRole === "driver" && "Rejoignez la plus grande flotte de RDC, activez votre présence en ligne en toute autonomie et multipliez vos gains par jour."}
                 {selectedRole === "owner" && "Gérez votre flotte de motos d'investissement à distance, suivez les versements et affectez des conducteurs vérifiés."}
+                {selectedRole === "admin" && "Plateforme de gestion complète. Surveillance, sécurité, audit et validation des chauffeurs."}
               </p>
             </div>
 
@@ -897,7 +1129,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                 onClick={handleNextStep}
                 className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-sm"
               >
-                Je confirme ce choix
+                {selectedRole === "admin" ? "S'inscrire (Admin Bypass)" : "Je confirme ce choix"}
               </button>
             </div>
           </div>
@@ -1132,6 +1364,12 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   <span>Réglementation Nationale RDC : Pièces d'identité obligatoires pour tous les citoyens</span>
                 </div>
               )}
+              {selectedRole === "admin" && (
+                <div className="flex items-center gap-2 text-emerald-650 font-bold text-xs bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                  <ShieldAlert className="w-4 h-4 text-emerald-600" />
+                  <span>Privilège Administrateur : Vous pouvez ignorer la vérification biométrique et cliquer directement sur Suivant.</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Type de Document d'Identité <span className="text-red-500">*</span></label>
@@ -1174,6 +1412,8 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   <span>ALGORITHME ACTIF</span>
                 </div>
               </div>
+
+              {cameraTarget === "profile" && renderLiveCameraViewport()}
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
                 {/* Simulated Camera Feed/Preview Grid Panel */}
@@ -1225,9 +1465,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
 
                   {/* Actions for selecting mock photo */}
                   <div className="flex flex-col gap-2 w-full mt-3">
+                    <button
+                      type="button"
+                      onClick={() => startCamera("profile")}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-xl text-[10px] flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5 animate-pulse" />
+                      <span>Prendre mon Selfie par Caméra 🤳</span>
+                    </button>
+
                     <label className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-xl text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm">
-                      <Camera className="w-3.5 h-3.5" />
-                      <span>{profilePic ? "Choisir / Prendre une autre Photo" : "Choisir / Prendre une Photo 📸"}</span>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{profilePic ? "Importer un autre fichier portrait" : "Importer un portrait photo 📁"}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1416,122 +1665,7 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
               </label>
 
               {/* LIVE CAMERA VIEWER PANEL */}
-              {isCameraActive && cameraTarget && (
-                <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-5 shadow-inner space-y-4 animate-fade-in text-left">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2.5 w-2.5 bg-emerald-500 rounded-full animate-ping" />
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-200 font-mono">
-                        Objectif Caméra Actif ({cameraTarget === "front" ? "RECTO du Permis" : "VERSO du Permis"})
-                      </span>
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={stopCamera}
-                      className="text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg px-2.5 py-1 transition-all text-[11px] font-bold cursor-pointer"
-                    >
-                      Annuler ✕
-                    </button>
-                  </div>
-
-                  {/* Video Viewport / Capture frame */}
-                  <div className="relative aspect-video max-w-md mx-auto bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                    {capturedPreview ? (
-                      <img referrerPolicy="no-referrer" src={capturedPreview} alt="Snapshot preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <video 
-                        ref={videoRef} 
-                        autoPlay 
-                        playsInline 
-                        muted 
-                        className="w-full h-full object-cover" 
-                      />
-                    )}
-
-                    {/* Centering overlay outline */}
-                    {!capturedPreview && (
-                      <div className="absolute inset-0 border-2 border-dashed border-emerald-500 rounded-xl pointer-events-none m-4 sm:m-6 flex flex-col justify-between p-2">
-                        <div className="flex justify-between">
-                          <div className="w-5 h-5 border-t-2 border-l-2 border-emerald-500" />
-                          <div className="w-5 h-5 border-t-2 border-r-2 border-emerald-500" />
-                        </div>
-                        <p className="text-[10px] bg-emerald-950/85 text-emerald-300 font-extrabold px-3 py-1 rounded-full select-none text-center self-center tracking-wider max-w-[80%] uppercase font-sans animate-pulse border border-emerald-500">
-                          Aligner le {cameraTarget === "front" ? "RECTO" : "VERSO"} du Permis de Conduire
-                        </p>
-                        <div className="flex justify-between">
-                          <div className="w-5 h-5 border-b-2 border-l-2 border-emerald-500" />
-                          <div className="w-5 h-5 border-b-2 border-r-2 border-emerald-500" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Captured preview tag */}
-                    {capturedPreview && (
-                      <div className="absolute inset-0 bg-emerald-950/20 flex items-center justify-center border border-emerald-500 rounded-xl">
-                        <span className="bg-emerald-600 text-white font-extrabold text-[10px] uppercase tracking-wider px-3.5 py-1.5 rounded-lg shadow-md flex items-center gap-1.5 animate-bounce">
-                          <Check className="w-3.5 h-3.5" /> Prévisualisation du Cliché
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {cameraError && (
-                    <div className="bg-red-950/45 border border-red-800 p-3 rounded-xl flex items-start gap-2 text-xs text-red-200">
-                      <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                      <span>{cameraError}</span>
-                    </div>
-                  )}
-
-                  {/* Actions buttons */}
-                  <div className="flex gap-3 justify-center">
-                    {capturedPreview ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setCapturedPreview(null)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700 shadow-sm"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Reprendre la photo</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (cameraTarget === "front") {
-                              setDocFront(capturedPreview);
-                            } else if (cameraTarget === "back") {
-                              setDocBack(capturedPreview);
-                            }
-                            stopCamera();
-                          }}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2.5 px-5 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
-                        >
-                          <Check className="w-4 h-4" />
-                          <span>Valider & Utiliser ce cliché</span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={stopCamera}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2 px-4 rounded-xl text-xs transition-all cursor-pointer border border-slate-700"
-                        >
-                          Fermer l'appareil
-                        </button>
-                        <button
-                          type="button"
-                          onClick={capturePhoto}
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 px-6 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md"
-                        >
-                          <Camera className="w-4 h-4 animate-pulse" />
-                          <span>Prendre la photo 📸</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
+              {isCameraActive && (cameraTarget === "front" || cameraTarget === "back") && renderLiveCameraViewport()}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Photo Recto */}
@@ -1539,6 +1673,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   {docFront ? (
                     <div className="relative h-24 w-full rounded-lg overflow-hidden border border-slate-200 bg-white">
                       <img referrerPolicy="no-referrer" src={docFront} alt="Front ID" className="h-full w-full object-contain" />
+                      
+                      {ocrActive && ocrTarget === "front" && (
+                        <>
+                          <div className="absolute left-0 right-0 h-0.5 bg-emerald-500 shadow-[0_0_10px_#10b981] animate-bounce" style={{ top: `${ocrProgress}%`, animationDuration: "1s" }} />
+                          <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center">
+                            <span className="bg-emerald-600 text-white font-extrabold text-[8px] tracking-wider px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin" /> OCR Actif...
+                            </span>
+                          </div>
+                        </>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setDocFront("")}
@@ -1550,10 +1696,11 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   ) : (
                     <div className="flex flex-col items-center justify-center py-2 text-slate-500 flex-grow border border-dashed border-slate-300 bg-white rounded-lg h-24">
                       <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                      <span className="text-[9px] text-slate-500 font-semibold">
-                        {docType === "permis_de_conduire" 
-                          ? "Permis de Conduire (Face avant / Recto)" 
-                          : "Photo de la pièce (Face avant / Recto)"}
+                      <span className="text-[9px] text-slate-500 font-semibold px-2">
+                        {docType === "carte_identite_nationale" && "Carte d'Identité (Recto)"}
+                        {docType === "passeport" && "Passeport (Page Principale)"}
+                        {docType === "permis_de_conduire" && "Permis de Conduire (Face Avant)"}
+                        {docType === "document_etranger" && "Document Étranger (Face Avant)"}
                       </span>
                     </div>
                   )}
@@ -1565,12 +1712,12 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                       className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded-lg text-[10px] flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
                     >
                       <Camera className="w-3.5 h-3.5" />
-                      <span>Prendre par Caméra en Direct 📸</span>
+                      <span>Scanner par Caméra (Recto) 📸</span>
                     </button>
 
                     <label className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-[10px] cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>Importer un fichier image (Recto)</span>
+                      <span>Importer un fichier (Recto)</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1593,6 +1740,18 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   {docBack ? (
                     <div className="relative h-24 w-full rounded-lg overflow-hidden border border-slate-200 bg-white">
                       <img referrerPolicy="no-referrer" src={docBack} alt="Back ID" className="h-full w-full object-contain" />
+                      
+                      {ocrActive && ocrTarget === "back" && (
+                        <>
+                          <div className="absolute left-0 right-0 h-0.5 bg-emerald-500 shadow-[0_0_10px_#10b981] animate-bounce" style={{ top: `${ocrProgress}%`, animationDuration: "1s" }} />
+                          <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center">
+                            <span className="bg-emerald-600 text-white font-extrabold text-[8px] tracking-wider px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin" /> OCR Actif...
+                            </span>
+                          </div>
+                        </>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setDocBack("")}
@@ -1604,10 +1763,11 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   ) : (
                     <div className="flex flex-col items-center justify-center py-2 text-slate-500 flex-grow border border-dashed border-slate-300 bg-white rounded-lg h-24">
                       <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                      <span className="text-[9px] text-slate-500 font-semibold">
-                        {docType === "permis_de_conduire" 
-                          ? "Permis de Conduire (Face arrière / Verso)" 
-                          : "Photo de la pièce (Face arrière / Verso)"}
+                      <span className="text-[9px] text-slate-500 font-semibold px-2">
+                        {docType === "carte_identite_nationale" && "Carte d'Identité (Verso)"}
+                        {docType === "passeport" && "Passeport (Page Arrière)"}
+                        {docType === "permis_de_conduire" && "Permis de Conduire (Verso)"}
+                        {docType === "document_etranger" && "Document Étranger (Verso)"}
                       </span>
                     </div>
                   )}
@@ -1619,12 +1779,12 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                       className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded-lg text-[10px] flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
                     >
                       <Camera className="w-3.5 h-3.5" />
-                      <span>Prendre par Caméra en Direct 📸</span>
+                      <span>Scanner par Caméra (Verso) 📸</span>
                     </button>
 
                     <label className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-[10px] cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-sm">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>Importer un fichier image (Verso)</span>
+                      <span>Importer un fichier (Verso)</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1642,6 +1802,26 @@ export default function RegistrationFlow({ onCompleteRegistration, lang = "fr" }
                   </div>
                 </div>
               </div>
+
+              {/* OCR Scanning Telemetry Monitor */}
+              {ocrActive && (
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 font-mono text-emerald-400 shadow-inner mt-4 animate-fade-in text-left">
+                  <div className="flex items-center gap-2 border-b border-slate-800 pb-2 mb-2 text-xs font-bold text-slate-250">
+                    <Cpu className="w-4 h-4 text-emerald-500 animate-spin" />
+                    <span>MOTEUR SÉCURISÉ GO-MOTO VISION-OCR ACTIF</span>
+                  </div>
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex justify-between">
+                      <span>Statut de l'extraction :</span>
+                      <span>{ocrProgress}%</span>
+                    </div>
+                    <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="bg-emerald-500 h-full transition-all duration-350" style={{ width: `${ocrProgress}%` }} />
+                    </div>
+                    <p className="text-slate-300 italic mt-1 leading-snug">➔ {ocrStatusText}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Locked Data Clause Reminder */}

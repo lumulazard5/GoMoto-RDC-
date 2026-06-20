@@ -86,7 +86,7 @@ export const generalTerms: LegalDocument = {
 
 export const driverPolicy: LegalDocument = {
   title: "Charte Contractuelle des Chauffeurs",
-  lastUpdated: "Mis à jour le 3 Juin 2026",
+  lastUpdated: "Mis à jour le 13 Juin 2026",
   sections: [
     {
       heading: "1. Exigences Obligatoires d'Enrôlement en RDC",
@@ -108,26 +108,61 @@ export const driverPolicy: LegalDocument = {
         "Chaque chauffeur s'engage à porter à chaque seconde en service la tenue réglementaire officielle et le casque officiel arborant fièrement le logo GoMoto visible de loin.",
         "L'obligation de fournir un second casque de protection propre pour le passager est absolue. La plateforme détecte les comportements de conduite inadéquats et suspendra le chauffeur sans préavis s'il est détecté dangereux."
       ]
+    },
+    {
+      heading: "4. Devoirs de Civilité et Comportement envers les Passagers (Clients)",
+      content: [
+        "Le chauffeur (partenaire motard) est le premier ambassadeur de GoMoto RDC sur la voie publique. Il a l'obligation stricte d'adopter un comportement irréprochable, courtois et digne face aux passagers.",
+        "Salutations et Dignité : Le chauffeur doit saluer respectueusement chaque client au début du trajet ('Bonjour', 'Mboté', ou 'Jambo' selon la région) et s'adresser à lui avec une grande politesse. Tout langage familier, injurieux ou déplacé, et toute forme de harcèlement moral, physique ou verbal, mènera au blocage immédiat du compte.",
+        "Sécurité et Assistance Bienveillante : Le chauffeur doit prêter assistance au passager pour ajuster correctement son casque de protection GoMoto. Il doit également être prévenant envers les clients vulnérables ou transportant des effets personnels légers et conformes.",
+        "Conduite Sereine : En cours de trajet, le conducteur s'interdit les conduites brusques, les cascades ou les accélérations agressives. Le confort psychologique de nos passagers est aussi important que leur sécurité physique."
+      ]
+    },
+    {
+      heading: "5. Priorité Absolue et Respect Sacré des Piétons sur la Voie Publique",
+      content: [
+        "Consciente de la situation en République Démocratique du Congo où les piétons sont historiquement marginalisés sur la chaussée par les chauffeurs de deux-roues, GoMoto RDC exige de tous ses collaborateurs un comportement civique d'avant-garde fondé sur la protection mutuelle.",
+        "Priorité Piétonne Sacrée : Le piéton a toujours la priorité absolue dans l'écosystème GoMoto. À l'approche de tout piéton s'apprêtant à traverser la route, en particulier au niveau des carrefours ou des passages cloutés (quand ils existent), le chauffeur GoMoto doit obligatoirement ralentir et lui céder le passage.",
+        "Interdiction Absolue des Trottoirs : Les trottoirs, accotements surélevés et passages de marche appartiennent exclusivement aux piétons. Il est rigoureusement et sans exception interdit de rouler, de stationner ou d'effectuer des manœuvres avec une moto GoMoto sur les trottoirs. Les contrevenants s'exposent à un bannissement immédiat et à un signalement automatique.",
+        "Protection des Personnes Vulnérables : Une patience absolue doit être observée face aux enfants, personnes âgées, femmes enceintes, parents portant des bébés et personnes en situation de handicap physique. Le chauffeur de moto GoMoto doit stopper sa machine pour sécuriser leur traversée.",
+        "Utilisation Interdite des Klaxons Intimidants : Il est formellement interdit de klaxonner de façon prolongée ou agressive afin d'effrayer, bousculer ou forcer de manière hostile un piéton à dégager la chaussée. Le klaxon est réservé uniquement aux alertes de sécurité urgentes contre les collisions.",
+        "Sanctions Sévères : Tout manquement aux règles de respect des piétons, tout comportement incivique généralisé ou toute mise en danger de la vie des marcheurs entraînera la résiliation immédiate de la collaboration du chauffeur partenaire."
+      ]
     }
   ]
 };
 
 export const clientPolicy: LegalDocument = {
   title: "Charte et Politique des Clients",
-  lastUpdated: "Mis à jour le 3 Juin 2026",
+  lastUpdated: "Mis à jour le 12 Juin 2026",
   sections: [
     {
-      heading: "1. Comportement du Passager et Respect de l'Arbitre",
+      heading: "1. Comportement du Passager, Équité et Dignité de Voyage",
       content: [
-        "Le passager s'engage à traiter le chauffeur avec respect, civisme et dignité. En tant qu'arbitre impartial du trajet, GoMoto enregistre tout abus commis de part et d'autre.",
-        "Le port du casque de protection orné du logo ou fourni par GoMoto RDC est une obligation légale de sécurité pour le passager, sans exception."
+        "Chaque passager s'engage de manière solennelle et irrévocable à saluer son chauffeur, à s'adresser à lui avec courtoisie et à respecter sa dignité humaine et professionnelle à chaque instant du trajet. Le chauffeur de taxi-moto GoMoto est un partenaire de la route digne de respect.",
+        "Le port du casque de protection homologué fourni par GoMoto RDC est obligatoire et non négociable. Le passager doit correctement l'ajuster pour sa propre sécurité et pour préserver la vie humaine sur la voie publique."
       ]
     },
     {
-      heading: "2. Tolérance Zéro Bagages et Colis Illicites",
+      heading: "2. Civilité, Savoir-Être et Interdiction des Violences envers les Chauffeurs et Agents",
       content: [
-        "Le passager est strictement interdit d'utiliser les services de GoMoto pour le transport d'armes à feu, de couteaux ou d'objets tranchants non protégés, de drogues, de produits inflammables, ou de tout matériel d'origine illégale.",
-        "Tout soupçon d'infraction flagrante donne le droit au chauffeur de refuser la prise en charge et de signaler instantanément l'utilisateur pour une intervention immédiate de la PNC."
+        "Le passager s'interdit formellement d'user de comportements agressifs, de violences verbales, de cris, d'insultes, d'injures rabaissantes ou de gestes déplacés à l'égard des chauffeurs (pilotes motards) ou de nos agents d'assistance clientèle (support d'arbitrage).",
+        "Aucune menace verbale ou physique ne sera tolérée. Tout manquement à cette règle de savoir-être entraînera la résiliation immédiate du compte du client, ainsi qu'un possible signalement aux autorités policières si l’intégrité physique ou morale de nos professionnels ou de nos agents est menacée."
+      ]
+    },
+    {
+      heading: "3. Non-Interférence avec la Conduite et Respect des Règles Routières",
+      content: [
+        "Pour des raisons évidentes de sécurité, le passager s'engage à ne pas importuner le chauffeur en cours de conduite ou à perturber son attention sur la route.",
+        "Le passager a la stricte interdiction de contraindre, de forcer ou d'inciter le chauffeur à commettre des infractions routières, telles que le surpassement de la vitesse autorisée (50 km/h), le transport en surcharge (plus d'un passager), ou le franchissement des barrières de la commune interdite de la Gombe.",
+        "Le passager accepte de s'acquitter pleinement du tarif exactement calculé par l'application, sans négociation hostile, intimidation ou recours à de fausses manipulations de portefeuille."
+      ]
+    },
+    {
+      heading: "4. Tolérance Zéro Bagages et Colis Illicites",
+      content: [
+        "Le passager d'un service de transport GoMoto ne peut transporter d'armes, d'objets tranchants ou contondants non emballés sécuritairement, de drogues, de produits hautement inflammables ou d'explosifs.",
+        "Le chauffeur est entièrement habilité à refuser la course s'il suspecte un colis illicite ou un danger imminent, sans pénalité pour son compte, et en informant immédiatement nos services pour arbitrage étatique."
       ]
     }
   ]
@@ -164,6 +199,62 @@ export const legalRegulations = {
     "La motocyclette doit disposer d'une carte rose valide, d'une plaque d'immatriculation d'État et de la vignette fiscale provinciale à jour.",
     "Porter obligatoirement la tenue officielle / gilet rétro-réfléchissant de GoMoto RDC avec logo visible sur le casque ou le dos.",
     "Se soumettre sans condition aux contrôles de police PNC en cas de signalement de conduite dangereuse détectée par le GPS de l'appareil."
+  ]
+};
+
+export const securityTerms: LegalDocument = {
+  title: "Codes de Sécurité Nationaux & Rôle d'Arbitre d'État de GoMoto RDC",
+  lastUpdated: "Mis à jour le 11 Juin 2026",
+  sections: [
+    {
+      heading: "Art 1. Port Obligatoire du Double Casque d'État",
+      content: [
+        "En stricte application de la Loi n° 78/022 relative au Code de la Route en RDC, le port du casque homologué est formellement obligatoire pour toute personne à bord d'un deux-roues motorisé.",
+        "GoMoto RDC applique cette mesure avec la plus grande fermeté. Les motards ont le devoir de fournir un casque de protection propre pour chaque client. Le passager a l'obligation de le porter durant tout le trajet. Les contrevenants s'exposent à une interpellation immédiate de la PNC et une exclusion définitive de nos services."
+      ]
+    },
+    {
+      heading: "Art 2. Interdiction Formelle de la Surcharge Routière (Surcharger la Moto)",
+      content: [
+        "La pratique de la surcharge (transporter plus d'un passager unique ou charger des colis d'un poids ou d'un gabarit démesuré) est rigoureusement interdite par la loi de transport routier de la RDC.",
+        "Nos équipes techniques surveillent le respect strict d'une seule personne embarquée (hors conducteur). Cela garantit l'efficacité du freinage d'urgence, stabilise la motocyclette contre l'usure de suspension et valide la couverture d'assurance de trajet. Les contrevenants subissent une mise à pied immédiate de leur compte."
+      ]
+    },
+    {
+      heading: "Art 3. Zone de Restriction Interprovinciale - Ordonnance Gombe",
+      content: [
+        "Suivant l'Arrêt Provincial de l'Hôtel de Ville de Kinshasa, le transit public des taxi-motos est interdit dans toute la délimitation de la commune de la Gombe, sur le Boulevard du 30 Juin et l'accès à l'Aéroport.",
+        "L'application GoMoto RDC applique ce prescrit de l'autorité étatique par barrière virtuelle active (Géofencing GPS). Le système interdit automatiquement d'accepter ou de planifier des courses franchissant ces zones interdites, préservant nos conducteurs de confiscation définitive de leur moto ou d'amendes administratives colossales."
+      ]
+    },
+    {
+      heading: "Art 4. Respect du Code de la Route & Alertes Télématiques",
+      content: [
+        "La vitesse maximale réglementaire autorisée en agglomération urbaine est de 50 km/h pour les motards.",
+        "L'application GoMoto RDC audite en permanence l'accéléromètre et le GPS du smartphone. Les conduites erratiques (slaloms intempestifs entre voitures, zigzags, excès de vitesse) génèrent des avertissements instantanés et réduisent la notation citoyenne du conducteur. Les comportements dangereux récurrents ou conduite en état d'ébriété entraînent un bannissement irrévocable."
+      ]
+    },
+    {
+      heading: "Art 5. Exigence de Conformité Technique et de Licence",
+      content: [
+        "Toute motocyclette rattachée au réseau doit être techniquement agréée (freins avant/arrière infaillibles, rétroviseurs bilatéraux réglementaires, éclairage rutilant) et détenir toutes ses pièces d'État valides (Permis A approuvé, Carte Rose de la moto, Vignette Provinciale annuelle et Assurance tiers valide).",
+        "Notre plateforme en ligne offre un tableau de bord sécurisé permettant d'émettre instantanément les documents certifiés au format numérique lors de contrôles légaux par la Police de Circulation Routière (PCR)."
+      ]
+    },
+    {
+      heading: "Art 6. Lutte contre les Tracasseries & Rôle de Souveraineté de GoMoto",
+      content: [
+        "Le rôle historique de GoMoto RDC est d'agir en tiers de confiance et arbitre de transparence pour formaliser le transport.",
+        "Grâce au tracking GPS inaltérable, à l'authentification faciale de nos chauffeurs et à l'élimination des encaissements physiques par versement automatique en Mobile Money, nous évitons les fraudes, les faux tickets réclamés par certains agents, et les tracasseries policières inutiles sur la voie publique."
+      ]
+    },
+    {
+      heading: "Art 7. Tolérance Zéro Produits Prohibés & Sécurité Civique",
+      content: [
+        "La contribution à l'effort national de pacification implique de barrer la route aux réseaux de vol, contrebande ou transport de colis suspects sans autorisation d'État.",
+        "Le transport de drogues, de produits contrefaits frelatés, de substances dangereuses inflammables ou d'armes mène à une suspension à vie. Les coordonnées GPS du trajet en cause et l'identité des comptes de l'utilisateur concerné seront transmises immédiatement aux Officiers de Police Judicière (OPJ) de la PNC."
+      ]
+    }
   ]
 };
 

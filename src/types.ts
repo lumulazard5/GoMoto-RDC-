@@ -80,6 +80,16 @@ export interface UserProfile {
   telecomAutoRenew?: boolean;
   telecomSecuredAPN?: boolean;
   telecomPlanPaidByGoMoto?: boolean; // Payer par moi (GoMoto) ou retenu sur gains
+  
+  // Bancaire et Mobile Money RDC
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankName?: string;
+  mobileMoneyNumber?: string;
+
+  // Loyalty and promotions
+  loyaltyPoints?: number;
+  fidelityTier?: string;
 }
 
 export interface MotorCycle {
@@ -98,7 +108,7 @@ export interface RideRequest {
   clientPhone: string;
   pickupAddress: DRCAddress;
   dropoffAddress: DRCAddress;
-  status: "searching" | "accepted" | "picked_up" | "completed" | "cancelled";
+  status: "searching" | "accepted" | "arrived" | "picked_up" | "completed" | "cancelled";
   priceCDF: number;
   priceUSD: number;
   distanceKm: number;
@@ -106,6 +116,7 @@ export interface RideRequest {
   driverName?: string;
   driverPhone?: string;
   driverSelfie?: string;
+  securityPin?: string;
   timestamp: string;
   disputeStatus?: "refunded" | "none";
   preferences?: {
@@ -213,6 +224,20 @@ export interface SOSAlert {
   reason: string;
   status: "active" | "resolved";
   resolutionNotes?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  adminId: string;
+  adminEmail: string;
+  adminName: string;
+  action: string;
+  targetId: string;
+  targetName: string;
+  details: string;
+  payloadBefore?: any;
+  payloadAfter?: any;
 }
 
 

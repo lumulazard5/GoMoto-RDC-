@@ -4,7 +4,19 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Coffee, Navigation, MapPin, Eye, Compass, RefreshCw } from "lucide-react";
+import { 
+  Coffee, 
+  Navigation, 
+  MapPin, 
+  Eye, 
+  Compass, 
+  RefreshCw,
+  AlertTriangle,
+  Bell,
+  X,
+  Volume2
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { DRCAddress } from "../types";
 
 interface MapSimulatorProps {
@@ -53,7 +65,28 @@ export default function MapSimulator({
   const [landmarks, setLandmarks] = useState<Landmark[]>([]);
   const [selectedAvenue, setSelectedAvenue] = useState<string>("");
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
+  // --- TRAFFIC JAM DISPATCHER ENGINE ---
+  interface TrafficJam {
+    id: string;
+    avenue: string;
+    severity: "moderate" | "heavy" | "blocked";
+    comment: string;
+    reportedBy: string;
+    timestamp: string;
+    x: number;
+    y: number;
+    type?: "horizontal" | "vertical";
+    roadIndex?: number;
+  }
+
+  const [trafficJams, setTrafficJams] = useState<TrafficJam[]>([]);
+  const [showJamModal, setShowJamModal] = useState(false);
+  const [reportedAvenue, setReportedAvenue] = useState("");
+  const [jamSeverity, setJamSeverity] = useState<"moderate" | "heavy" | "blocked">("moderate");
+  const [jamComment, setJamComment] = useState("");
+  const [activeNotification, setActiveNotification] = useState<{ id: string; title: string; message: string; severity: string } | null>(null);
+
   // Roads grid coordinates
   const horizontalRoads = [60, 140, 220, 300, 380];
   const verticalRoads = [60, 150, 240, 330, 420];
@@ -73,6 +106,180 @@ export default function MapSimulator({
     "Avenue Colonel Ebeya",
     "Avenue Nguma"
   ];
+
+  const getRoadDetails = (name: string) => {
+    const hIdx = roadNamesHorizontal.indexOf(name);
+    if (hIdx !== -1) {
+      return { type: "horizontal" as const, coord: horizontalRoads[hIdx], index: hIdx };
+    }
+    const vIdx = roadNamesVertical.indexOf(name);
+    if (vIdx !== -1) {
+      return { type: "vertical" as const, coord: verticalRoads[vIdx], index: vIdx };
+    }
+    return null;
+  };
+
+  const DEFAULT_TRAFFIC_JAMS: TrafficJam[] = [
+    {
+      id: "tf-1",
+      avenue: "Boulevard Lumumba",
+      severity: "heavy",
+      comment: "Panne d'autobus Transco au carrefour",
+      reportedBy: "Chauffeur Héritier",
+      timestamp: "Il y a 10 min",
+      x: 150,
+      y: 220,
+      type: "vertical",
+      roadIndex: 1
+    },
+    {
+      id: "tf-2",
+      avenue: "Avenue Kasa-Vubu",
+      severity: "moderate",
+      comment: "Contrôle PNC de routine",
+      reportedBy: "Chauffeur Sarah",
+      timestamp: "Il y a 5 min",
+      x: 240,
+      y: 140,
+      type: "horizontal",
+      roadIndex: 2
+    }
+  ];
+
+  // Request browser Notification permission
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(e => console.warn("Error requesting notification rights:", e));
+    }
+  }, []);
+
+  // Sync traffic alerts from/to localStorage in real-time
+  useEffect(() => {
+    const loadTrafficJams = () => {
+      const saved = localStorage.getItem("gomoto_traffic_jams");
+      if (saved) {
+        try {
+          setTrafficJams(JSON.parse(saved));
+        } catch (e) {
+          console.error("Failed to parse traffic jams, defaulting", e);
+          setTrafficJams(DEFAULT_TRAFFIC_JAMS);
+        }
+      } else {
+        localStorage.setItem("gomoto_traffic_jams", JSON.stringify(DEFAULT_TRAFFIC_JAMS));
+        setTrafficJams(DEFAULT_TRAFFIC_JAMS);
+      }
+    };
+
+    loadTrafficJams();
+
+    const handleSync = () => {
+      loadTrafficJams();
+    };
+
+    window.addEventListener("gomoto-traffic-update", handleSync);
+    return () => {
+      window.removeEventListener("gomoto-traffic-update", handleSync);
+    };
+  }, []);
+
+  const playNotificationSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const playBeep = (freq: number, start: number, duration: number) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.08, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+      };
+      const now = audioCtx.currentTime;
+      playBeep(587.33, now, 0.15); // D5
+      playBeep(698.46, now + 0.14, 0.25); // F5 (creates a nice premium warning beep)
+    } catch (e) {
+      console.warn("Unable to play synthesized audio alert:", e);
+    }
+  };
+
+  const sendLocalPushNotification = (title: string, body: string) => {
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(title, {
+          body,
+          tag: "gomoto-traffic",
+          requireInteraction: false
+        });
+      } catch (e) {
+        console.warn("Unable to dispatch native desktop notification, using UI banner.", e);
+      }
+    }
+  };
+
+  const handleReportTrafficJam = () => {
+    const avenueToReport = reportedAvenue || selectedAvenue || roadNamesHorizontal[0];
+    const details = getRoadDetails(avenueToReport);
+    
+    // Position selection along the specified road grid
+    let tx = 240;
+    let ty = 220;
+    if (details) {
+      if (details.type === "horizontal") {
+        ty = details.coord;
+        tx = 80 + Math.floor(Math.random() * 320);
+      } else {
+        tx = details.coord;
+        ty = 80 + Math.floor(Math.random() * 280);
+      }
+    }
+
+    const newJam: TrafficJam = {
+      id: "tf-" + Math.random().toString(36).substring(2, 9),
+      avenue: avenueToReport,
+      severity: jamSeverity,
+      comment: jamComment || "Embouteillage et trafic dense",
+      reportedBy: role === "driver" ? "Chauffeur Motard GoMoto" : "Chauffeur Partenaire",
+      timestamp: new Date().toLocaleTimeString("fr-CD", { hour: "2-digit", minute: "2-digit" }),
+      x: tx,
+      y: ty,
+      type: details?.type,
+      roadIndex: details?.index
+    };
+
+    const updated = [newJam, ...trafficJams].slice(0, 12);
+    localStorage.setItem("gomoto_traffic_jams", JSON.stringify(updated));
+    setTrafficJams(updated);
+    setShowJamModal(false);
+    setJamComment("");
+
+    // Broadcast update event to all instances of MapSimulator (e.g., driver and client tabs)
+    window.dispatchEvent(new Event("gomoto-traffic-update"));
+
+    // Sound signal
+    playNotificationSound();
+
+    // Trigger local push notification
+    const severityLabel = jamSeverity === "moderate" ? "Trafic Ralenti 🟠" : jamSeverity === "heavy" ? "Embouteillage Critique 🔴" : "Route Bloquée 🚫";
+    const titleText = `🚨 EMBOUTEILLAGE EN DIRECT : ${avenueToReport}`;
+    const descText = `${severityLabel} : ${newJam.comment}`;
+
+    sendLocalPushNotification(titleText, descText);
+
+    // Beautiful UI interactive local push popup
+    setActiveNotification({
+      id: newJam.id,
+      title: titleText,
+      message: `${descText}. Prenez vos dispositions et contournez la zone si possible !`,
+      severity: jamSeverity
+    });
+
+    setTimeout(() => {
+      setActiveNotification(prev => prev?.id === newJam.id ? null : prev);
+    }, 7000);
+  };
 
   // Generate landmarks based on geography
   useEffect(() => {
@@ -101,6 +308,14 @@ export default function MapSimulator({
         { name: "Rond-point Tchutcha", x: 180, y: 180, type: "office" },
         { name: "Aéroport de Goma", x: 390, y: 100, type: "stadium" },
         { name: "Marché Virunga", x: 100, y: 100, type: "market" }
+      ];
+    } else if (provinceLCase.includes("central") || provinceLCase.includes("kasai") || cityLCase.includes("kananga")) {
+      localLandmarks = [
+        { name: "Aéroport de Kananga", x: 390, y: 80, type: "stadium" },
+        { name: "Cathédrale Saint-Clément", x: 150, y: 120, type: "office" },
+        { name: "Marché Central de Kananga", x: 280, y: 190, type: "market" },
+        { name: "Stade des Jeunes", x: 100, y: 280, type: "stadium" },
+        { name: "Rond-point Monument", x: 220, y: 80, type: "office" }
       ];
     } else {
       localLandmarks = [
@@ -338,6 +553,62 @@ export default function MapSimulator({
           </g>
         ))}
 
+        {/* REAL-TIME TRAFFIC JAMS HOTSPOTS OVERLAY (For all users) */}
+        {trafficJams.map((jam) => {
+          const isHorizontal = jam.type === "horizontal";
+          const strokeColor = jam.severity === "moderate" ? "#f97316" : jam.severity === "heavy" ? "#ef4444" : "#991b1b";
+          const severityLabel = jam.severity === "moderate" ? "Trafic Ralenti" : jam.severity === "heavy" ? "Embouteillage Critique" : "Avenue Bloquée";
+          
+          return (
+            <g key={`jam-layer-${jam.id}`} className="transition-all duration-300">
+              {/* Highlight road segment flow line */}
+              {isHorizontal ? (
+                <line
+                  x1="18"
+                  y1={jam.y}
+                  x2="462"
+                  y2={jam.y}
+                  stroke={strokeColor}
+                  strokeWidth="5"
+                  opacity="0.65"
+                  strokeLinecap="round"
+                  strokeDasharray="6,4"
+                  className="animate-[pulse_1.5s_infinite]"
+                />
+              ) : (
+                <line
+                  x1={jam.x}
+                  y1="18"
+                  x2={jam.x}
+                  y2="422"
+                  stroke={strokeColor}
+                  strokeWidth="5"
+                  opacity="0.65"
+                  strokeLinecap="round"
+                  strokeDasharray="6,4"
+                  className="animate-[pulse_1.5s_infinite]"
+                />
+              )}
+
+              {/* Glowing Hazard Pulse ring & Icon */}
+              <g transform={`translate(${jam.x}, ${jam.y})`} className="cursor-help">
+                <title>{`[🚨 ${severityLabel}] ${jam.avenue} : ${jam.comment}\nSignalé par : ${jam.reportedBy} à ${jam.timestamp}`}</title>
+                <circle cx="0" cy="0" r="14" fill={strokeColor} opacity="0.25" className="animate-ping" />
+                <circle cx="0" cy="0" r="8" fill="#0f172a" stroke={strokeColor} strokeWidth="1.8" />
+                <text x="0" y="2.5" fill={strokeColor} className="text-[7.5px] font-extrabold font-sans text-center" textAnchor="middle">⚠️</text>
+              </g>
+
+              {/* Floating micro name tags directly above the hazard icon */}
+              <g transform={`translate(${jam.x}, ${jam.y - 12})`} className="pointer-events-none select-none">
+                <rect x="-38" y="-6" width="76" height="12" rx="3" fill="#020617" stroke={strokeColor} strokeWidth="1" className="shadow-lg opacity-90" />
+                <text x="0" y="2.5" fill="#f8fafc" className="text-[5.5px] font-mono font-black tracking-wider text-center" textAnchor="middle">
+                  {jam.avenue.substring(0, 11)}..
+                </text>
+              </g>
+            </g>
+          );
+        })}
+
         {/* Other Available Motos Driving around */}
         {taxis.map((t) => {
           // If ride active and this is interactive driver-1, hide this drift instance and prioritize custom driving state
@@ -442,7 +713,21 @@ export default function MapSimulator({
         </div>
       </div>
 
-      <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1">
+      <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5">
+        {role === "driver" && (
+          <button
+            type="button"
+            onClick={() => {
+              setReportedAvenue(selectedAvenue || "");
+              setShowJamModal(true);
+            }}
+            className="bg-red-600 hover:bg-red-500 text-white font-extrabold px-3 py-2 rounded-xl text-[10px] tracking-wider uppercase flex items-center gap-1.5 shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer pointer-events-all"
+            title="Signaler un embouteillage en temps réel"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 fill-white text-red-600 animate-pulse" />
+            <span>Signaler Bouchon 🚨</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -488,6 +773,169 @@ export default function MapSimulator({
             </span>
           </div>
           <div className="font-mono text-yellow-500 text-[9px] font-bold">MODE LIVE</div>
+        </div>
+      )}
+
+      {/* DYNAMIC PUSH NOTIFICATION POPUP BANNER */}
+      <AnimatePresence>
+        {activeNotification && (
+          <motion.div
+            key={activeNotification.id}
+            initial={{ opacity: 0, y: -70, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -45, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+            className="absolute top-3 left-3 right-3 z-50 bg-slate-950/95 backdrop-blur-xl border border-slate-800 rounded-2xl p-3 shadow-xl flex items-start gap-3 text-left max-w-sm mx-auto shadow-rose-950/20"
+          >
+            <div className={`p-2 rounded-lg shrink-0 ${
+              activeNotification.severity === "moderate" ? "bg-amber-500/10 text-amber-450 border border-amber-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+            }`}>
+              <Bell className="w-4 h-4 animate-bounce" />
+            </div>
+            
+            <div className="space-y-0.5 flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[7.5px] font-black tracking-widest text-[#eab308] uppercase font-mono">GoMoto Flash Trafic RDC</span>
+                <span className="text-[7px] font-mono text-slate-500">A l'instant</span>
+              </div>
+              <h4 className="text-[10px] font-black text-rose-100 truncate font-sans">{activeNotification.title}</h4>
+              <p className="text-[9px] text-slate-350 leading-snug font-sans">{activeNotification.message}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveNotification(null)}
+              className="text-slate-500 hover:text-slate-300 shrink-0 self-start p-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MOTO TRAFFIC REPORTERS DRAWER MODAL */}
+      {showJamModal && (
+        <div id="traffic-jam-form-overlay" className="absolute inset-0 z-40 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-3 select-text pointer-events-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 w-full max-w-[340px] space-y-3.5 shadow-2xl text-left">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-red-500 fill-red-500/20" />
+                <h4 className="text-[10.5px] font-black text-slate-100 uppercase tracking-widest font-mono">Signaler Embouteillage</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowJamModal(false)}
+                className="text-slate-500 hover:text-slate-350 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="space-y-1">
+                <label className="text-[8.5px] font-extrabold text-slate-400 uppercase tracking-wider block">Avenue / Rue Concernée</label>
+                <select
+                  value={reportedAvenue}
+                  onChange={(e) => setReportedAvenue(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 font-bold focus:outline-none focus:border-yellow-500 transition-all font-sans text-[11px]"
+                >
+                  <option value="">-- Choisir une avenue --</option>
+                  {[...roadNamesHorizontal, ...roadNamesVertical].map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                {selectedAvenue && (
+                  <button
+                    type="button"
+                    onClick={() => setReportedAvenue(selectedAvenue)}
+                    className="text-[8px] text-yellow-500/70 hover:text-yellow-500 transition-all mt-0.5 text-left font-semibold cursor-pointer"
+                  >
+                    Utiliser le point sélectionné sur la carte (<b>{selectedAvenue}</b>)
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[8.5px] font-extrabold text-slate-400 uppercase tracking-wider block">Intensité du bouchon</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setJamSeverity("moderate")}
+                    className={`py-1.5 rounded-lg text-[8.5px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
+                      jamSeverity === "moderate"
+                        ? "bg-amber-500/10 border-amber-500 text-amber-400 font-extrabold shadow-sm"
+                        : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-450"
+                    }`}
+                  >
+                    Modéré 🟠
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJamSeverity("heavy")}
+                    className={`py-1.5 rounded-lg text-[8.5px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
+                      jamSeverity === "heavy"
+                        ? "bg-red-500/10 border-red-500 text-red-400 font-extrabold shadow-sm"
+                        : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-450"
+                    }`}
+                  >
+                    Critique 🔴
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJamSeverity("blocked")}
+                    className={`py-1.5 rounded-lg text-[8.5px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
+                      jamSeverity === "blocked"
+                        ? "bg-purple-950/40 border-purple-600 text-purple-400 font-extrabold shadow-sm"
+                        : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-450"
+                    }`}
+                  >
+                    Bloqué 🚫
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[8.5px] font-extrabold text-slate-400 uppercase tracking-wider block">Description rapide / Cause</label>
+                <input
+                  type="text"
+                  value={jamComment}
+                  onChange={(e) => setJamComment(e.target.value)}
+                  placeholder="Ex: Accident, travaux PNC, inondation..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-yellow-500 transition-all font-sans text-[10.5px]"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {["Accident 💥", "Contrôle 👮", "Travaux 🚧", "Pluie/Eau 🌧️"].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setJamComment(tag)}
+                      className="bg-slate-950 hover:bg-slate-850 border border-slate-850/60 text-[7.5px] font-mono text-slate-400 px-1.5 py-0.5 rounded cursor-pointer"
+                    >
+                      +{tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1 font-sans">
+              <button
+                type="button"
+                onClick={() => setShowJamModal(false)}
+                className="flex-1 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-450 font-bold py-1.5 rounded-xl text-[10.5px] transition-all cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleReportTrafficJam}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-black py-1.5 rounded-xl text-[10.5px] transition-all shadow-md cursor-pointer disabled:opacity-50"
+                disabled={!reportedAvenue && !selectedAvenue}
+              >
+                Emettre Info 🚨
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

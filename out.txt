@@ -1,0 +1,82 @@
+113:        pickupAddress: {
+145:        pickupAddress: {
+231:  const [pickupRoad, setPickupRoad] = useState<string>("");
+332:    pickup: string;
+645:            pickup: "Grand Hôtel de Kinshasa, Gombe",
+671:            pickup: "Palais du Peuple, Lingwala",
+685:    if (!pickupRoad || !dropoffRoad) return;
+687:    const str = `${selectedCityName}-${selectedCommuneName}-${pickupRoad}-${dropoffRoad}`;
+703:  }, [pickupRoad, dropoffRoad, selectedCityName, selectedCommuneName]);
+808:      const startPos = { x: 60, y: 60 };
+809:      const totalDx = passengerPos.x - startPos.x;
+810:      const totalDy = passengerPos.y - startPos.y;
+821:      const startPos = { x: 240, y: 220 };
+823:      const totalDx = destination.x - startPos.x;
+824:      const totalDy = destination.y - startPos.y;
+842:    const startX = 240;
+843:    const startY = 220;
+844:    const diffX = Math.abs(pos.x - startX);
+845:    const diffY = Math.abs(pos.y - startY);
+886:      pickupAddress: {
+892:        avenue: pickupRoad,
+924:        pickup: `${pickupRoad}, C/${selectedCommuneName}`,
+1291:              pickup: `${pickupRoad}, ${profile.address.commune}`,
+1325:              pickup: `${pickupRoad}, ${profile.address.commune}`,
+1601:    const pickupTxt = tx.rideDetails?.pickup || `${pickupRoad || "Adresse de départ"}, ${profile.address.quartier}, ${profile.address.commune}`;
+1602:    doc.text(pickupTxt.length > 75 ? pickupTxt.substring(0, 75) + "..." : pickupTxt, 25, 120);
+1794:    const pAddress = `${ride.pickupAddress.avenue}, Q.${ride.pickupAddress.quartier} (${ride.pickupAddress.commune})`;
+2207:    <div id="client-screen-container" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start max-w-7xl mx-auto relative">
+2219:              className={`p-4 rounded-2xl shadow-xl border flex gap-3 text-left pointer-events-auto items-start ${
+2507:                <span className="font-bold text-slate-800 max-w-[150px] truncate" title={pickupRoad}>{pickupRoad}</span>
+2531:            <div className="mt-4 bg-emerald-50 border border-emerald-500/20 p-3 rounded-2xl flex items-start gap-2.5 shadow-sm text-left">
+2573:                <div className="flex items-start gap-2.5">
+2619:                          : "bg-white border border-slate-200 text-slate-800 self-start rounded-bl-none shadow-sm"
+2718:                pickupAddress={{
+2723:                  avenue: pickupRoad,
+2904:                      value={pickupRoad}
+2939:                        .filter((av) => av !== pickupRoad)
+2958:                        Calcul de la distance à {selectedCityName} ({selectedCommuneName}) via {pickupRoad} et {dropoffRoad}...
+2974:                      className={`p-3.5 rounded-2xl border text-left flex justify-between items-start transition-all cursor-pointer ${
+2993:                      className={`p-3.5 rounded-2xl border text-left flex justify-between items-start transition-all cursor-pointer ${
+3012:                      className={`p-3.5 rounded-2xl border text-left flex justify-between items-start transition-all cursor-pointer ${
+3071:                        <div className="flex items-start gap-3">
+3084:                        {/* Form starts here */}
+3127:                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+3141:                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+3155:                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+3169:                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+3183:                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+3197:                            <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none group">
+3241:                      <div className="bg-gradient-to-r from-emerald-50/90 to-slate-50/90 border-2 border-emerald-500/20 rounded-2xl p-4 text-left flex flex-col sm:flex-row gap-3 items-start justify-between shadow-sm">
+3242:                        <div className="flex gap-2.5 items-start text-[10.5px]">
+3269:                          className="bg-rose-50 hover:bg-rose-100 border border-rose-200 text-[9.5px] font-medium text-rose-700 py-1 px-2.5 rounded-lg font-mono tracking-wider transition cursor-pointer self-end sm:self-start shrink-0"
+3277:                        <div className="flex gap-2.5 items-start text-[10.5px]">
+3325:                <div className="bg-blue-50 border border-blue-100 p-3.5 rounded-2xl flex items-start gap-2.5 text-xs text-blue-805 leading-relaxed">
+3337:                  <div className="flex items-start gap-2 text-xs relative">
+3345:                  <div className="flex items-start gap-2 text-xs relative">
+3349:                      <p className="text-[10px] text-slate-450">Embarquement sécurisé à l'Avenue {pickupRoad}</p>
+3353:                  <div className="flex items-start gap-2 text-xs relative">
+3408:                                pickup: `${pickupRoad}, C/${profile.address.commune}`,
+3604:              <div className="flex justify-between items-start">
+3802:                  const pickupMatch = `${ride.pickupAddress.avenue} ${ride.pickupAddress.commune} ${ride.pickupAddress.quartier}`.toLowerCase().includes(query);
+3804:                  matchesQuery = driverMatch || idMatch || dateMatch || pickupMatch || dropoffMatch;
+3867:                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
+3889:                              <div className="flex justify-between items-start w-full">
+3901:                                  <span className="truncate">{ride.pickupAddress.avenue}</span>
+3929:                            <div className="flex justify-between items-start border-b border-slate-200 pb-3">
+3953:                                      {ride.pickupAddress.avenue}, Q.{ride.pickupAddress.quartier} ({ride.pickupAddress.commune})
+3985:                                <span className="bg-slate-900/90 text-white font-bold text-[7.5px] px-1 py-0.5 rounded border border-slate-800 whitespace-nowrap mt-1 font-sans">{ride.pickupAddress.commune}</span>
+3995:                                  COMMUNE: {ride.pickupAddress.commune} vers {ride.dropoffAddress.commune}
+4063:                              <div className="flex items-start gap-2.5">
+4121:            <div className="bg-amber-50 border border-amber-105 p-4 rounded-2xl text-[11px] text-slate-700 flex items-start gap-2.5">
+4437:            <div className="flex justify-between items-start gap-4 flex-wrap">
+4465:              <div className="flex items-start gap-3.5 relative z-10">
+4581:                      <div className="flex justify-between items-start gap-2">
+4754:              <div className="flex justify-between items-start gap-4 flex-wrap">
+4807:                      offlineModeSimulated ? "bg-amber-500 justify-end" : "bg-slate-300 justify-start"
+4922:            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+4951:                            [{ride.id}] {ride.timestamp} - {ride.pickupAddress.avenue} ({ride.priceCDF.toLocaleString("fr-FR")} CDF)
+5059:                        pickup: selectedRide.pickupAddress.avenue,
+5087:                          pickup: selectedRide.pickupAddress.avenue,
+5530:                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-start gap-2 text-[9px] text-blue-800 text-left">
+5776:            <div className="bg-blue-50/70 border border-blue-100 p-3 rounded-xl flex items-start gap-2 text-[9px] text-blue-805 text-left leading-relaxed">

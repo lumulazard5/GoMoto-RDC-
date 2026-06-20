@@ -52,6 +52,11 @@ export interface TranslationSet {
   payoutRequest: string;
   payoutHistory: string;
   submitModification: string;
+  tabRide: string;
+  tabWallet: string;
+  tabProfile: string;
+  tabHistory: string;
+  tabDisputes: string;
 }
 
 export const translations: Record<AppLanguage, TranslationSet> = {
@@ -102,6 +107,11 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     payoutRequest: "Demander Retrait",
     payoutHistory: "Historique de Versements",
     submitModification: "Introduire une modification",
+    tabRide: "Commander",
+    tabWallet: "Mon Portefeuille",
+    tabProfile: "Profil & Paramètres",
+    tabHistory: "Mon Historique",
+    tabDisputes: "Litiges & Remboursements",
   },
   en: {
     appName: "GoMoto DRC",
@@ -150,6 +160,11 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     payoutRequest: "Request Payout",
     payoutHistory: "Payout Transactions",
     submitModification: "Submit Modification Request",
+    tabRide: "Order Ride",
+    tabWallet: "My Wallet",
+    tabProfile: "Profile & Settings",
+    tabHistory: "My History",
+    tabDisputes: "Disputes & Refunds",
   },
   sw: {
     appName: "GoMoto RDC",
@@ -198,6 +213,11 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     payoutRequest: "Pata Pesa",
     payoutHistory: "Historia ya Malipo ya Benki",
     submitModification: "Tuma ombi la kurekebisha jina",
+    tabRide: "Agiza Safari",
+    tabWallet: "Pochi Yangu",
+    tabProfile: "Wasifu na Mipangilio",
+    tabHistory: "Historia Yangu",
+    tabDisputes: "Migogoro na Kurejeshewa",
   },
   ln: {
     appName: "GoMoto RDC",
@@ -246,6 +266,11 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     payoutRequest: "Bimisa mosolo",
     payoutHistory: "Kasa ya mosolo obimisaki",
     submitModification: "Senga mbalakaka ya mikanda",
+    tabRide: "Senga Moto-Taxi",
+    tabWallet: "Kasa na mosolo",
+    tabProfile: "Yango Moko",
+    tabHistory: "Mokanda na Mibembo",
+    tabDisputes: "Matata & Kozongisa",
   },
   ts: {
     appName: "GoMoto RDC",
@@ -294,6 +319,11 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     payoutRequest: "Angata Makuta",
     payoutHistory: "Mikwata ya makuta elayiku",
     submitModification: "Lomba diongolola dia mbula",
+    tabRide: "Lomba Mutobo",
+    tabWallet: "Diteba dianyi",
+    tabProfile: "Tshimfuendi",
+    tabHistory: "Maalu Malala",
+    tabDisputes: "Bilumbu ne Kupingana",
   },
   kk: {
     appName: "GoMoto RDC",
@@ -342,5 +372,10 @@ export const translations: Record<AppLanguage, TranslationSet> = {
     payoutRequest: "Bimisa Mbongo",
     payoutHistory: "Mbongo yina nge katula",
     submitModification: "Lomba mbalukalu ya minkanda",
+    tabRide: "Lomba Taxi",
+    tabWallet: "Kidiba yina",
+    tabProfile: "Kizina na nge",
+    tabHistory: "Mambu me Luta",
+    tabDisputes: "Ntembe mpe kuvutuka",
   },
 };

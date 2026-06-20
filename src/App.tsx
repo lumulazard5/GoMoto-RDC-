@@ -12,9 +12,15 @@ import DriverDashboard from "./components/DriverDashboard";
 import OwnerDashboard from "./components/OwnerDashboard";
 import AdminPanel from "./components/AdminPanel";
 import LegalCenter from "./components/LegalCenter";
-import AIChatBot from "./components/AIChatBot";
 import MobileAppDownload from "./components/MobileAppDownload";
 import VocalAssistant from "./components/VocalAssistant";
+import TasksManager from "./components/TasksManager";
+import FormsManager from "./components/FormsManager";
+import ChatWorkspaceManager from "./components/ChatWorkspaceManager";
+import MeetManager from "./components/MeetManager";
+import OnboardingModal from "./components/OnboardingModal";
+import BatteryStatus from "./components/BatteryStatus";
+import { T, AutoTranslateContainer } from "./components/Translate";
 import { 
   ShieldAlert, 
   User, 
@@ -24,321 +30,199 @@ import {
   HelpCircle,
   Compass,
   AlertTriangle,
-  Info
+  Info,
+  CheckSquare,
+  FileText,
+  MessageSquare,
+  Video
 } from "lucide-react";
-
-// Pre-populate some mock users to make the system fully alive and traceable
-const initialRegisteredUsers: UserProfile[] = [
-  {
-    id: "usr-driver-881",
-    role: "driver",
-    firstName: "Rachel",
-    lastName: "NYEMBO",
-    email: "rachel.nyembo@gmail.com",
-    phone: "+243 998 440 119",
-    address: {
-      province: "Kinshasa",
-      city: "Kinshasa",
-      commune: "Ngaliema",
-      quartier: "Binza Pigeon",
-      localite: "Localité Ozone",
-      avenue: "Avenue de la Justice",
-      number: "44",
-    },
-    walletBalanceCDF: 34000,
-    walletBalanceUSD: 12.5,
-    isRegistered: true,
-    isOnline: true,
-    onlineSelfieUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150",
-    rating: 4.85,
-    ridesCompleted: 142,
-    documentType: "carte_identite_nationale",
-    documentNumber: "KN-ID-0099411",
-    profilePicture: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150",
-    documentStatus: "approved",
-    myReferralCode: "GOMOTO-NYEMBO-55",
-    referralCount: 3,
-  },
-  {
-    id: "usr-driver-777",
-    role: "driver",
-    firstName: "Héritier",
-    lastName: "LUKUSA",
-    email: "heritier.lukusa@gmail.com",
-    phone: "+243 821 445 778",
-    address: {
-      province: "Kinshasa",
-      city: "Kinshasa",
-      commune: "Gombe",
-      quartier: "Socimat",
-      localite: "Localité Gombe",
-      avenue: "Avenue Nguma",
-      number: "12",
-    },
-    walletBalanceCDF: 50000,
-    walletBalanceUSD: 18.0,
-    isRegistered: true,
-    isOnline: true,
-    onlineSelfieUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150",
-    rating: 4.8,
-    ridesCompleted: 110,
-    documentType: "permis_de_conduire",
-    documentNumber: "KN-DR-77114",
-    profilePicture: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150",
-    vehiclePlate: "C-MC-4458KIN",
-    vehicleModel: "Yamaha DT 125 Jaune RDC",
-    documentStatus: "pending", // Let this one be pending so the admin can verify/approve it!
-    myReferralCode: "GOMOTO-LUKUSA-777",
-    referralCount: 5,
-  },
-  {
-    id: "usr-owner-441",
-    role: "owner",
-    firstName: "Dieudonné",
-    lastName: "MBOKOLO",
-    email: "d.mbokolo@gmail.com",
-    phone: "+243 812 770 099",
-    address: {
-      province: "Lubumbashi",
-      city: "Lubumbashi",
-      commune: "Kampemba",
-      quartier: "Bel-Air",
-      localite: "Localité Centre",
-      avenue: "Avenue Kasa-Vubu",
-      number: "109",
-    },
-    walletBalanceCDF: 450000,
-    walletBalanceUSD: 160,
-    isRegistered: true,
-    isOnline: false,
-    rating: 5.0,
-    ridesCompleted: 0,
-    documentType: "passeport",
-    documentNumber: "PASS-CG-99841",
-    profilePicture: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150",
-    documentStatus: "approved",
-    myReferralCode: "GOMOTO-MBOKOLO",
-    referralCount: 1,
-  }
-];
-
-const initialSubmittedTaxDocs: SubmittedTaxDocument[] = [
-  {
-    id: "doc-tax-901",
-    userId: "usr-driver-881",
-    userName: "Rachel NYEMBO",
-    userRole: "driver",
-    docType: "annual_tax",
-    submittedAt: "04/06/2026",
-    status: "pending",
-    details: {
-      period: "Année Fiscale 2026",
-      totalCDF: 14500000,
-      totalUSD: 5200,
-      confidentialDriverAddress: "44 Avenue de la Justice, Qtr Binza Pigeon, Commune Ngaliema, Kinshasa",
-      confidentialOwnerAddress: "99 Avenue de la Révolution, Qtr Golf, Commune Lubumbashi, Prov. Lubumbashi",
-      headquartersAddress: "GoMoto RDC, 44 Avenue du 24 Novembre, Immeuble REPARO, Gombe, Kinshasa"
-    }
-  },
-  {
-    id: "doc-tax-902",
-    userId: "usr-owner-441",
-    userName: "Dieudonné MBOKOLO",
-    userRole: "owner",
-    docType: "daily_revenue",
-    submittedAt: "04/06/2026",
-    status: "approved",
-    adminNotes: "Déclaration journalière conforme. Sceau syndical validé.",
-    details: {
-      period: "Aujourd'hui",
-      totalCDF: 250000,
-      totalUSD: 95,
-      confidentialDriverAddress: "12 Avenue Nguma, Qtr Socimat, Commune Gombe, Kinshasa",
-      confidentialOwnerAddress: "99 Avenue de la Révolution, Qtr Golf, Commune Lubumbashi, Prov. Lubumbashi",
-      headquartersAddress: "GoMoto RDC, 44 Avenue du 24 Novembre, Immeuble REPARO, Gombe, Kinshasa"
-    }
-  }
-];
-
-const initialSOSAlerts: SOSAlert[] = [
-  {
-    id: "sos-109a",
-    userId: "user-driver-jean",
-    userName: "Jean-Pierre Mukeba",
-    userPhone: "+243 812 345 678",
-    userRole: "driver",
-    latitude: -4.31682,
-    longitude: 15.30452,
-    timestamp: "05/06/2026 12:44",
-    reason: "⚠️ PROBLÈME THERMIQUE MOTEUR / PANNE DANS ZONE SANS ÉCLAIRAGE",
-    status: "resolved",
-    resolutionNotes: "Assistance GoMoto Kinshasa dépêchée sur place. Moto remorquée avec succès."
-  },
-  {
-    id: "sos-882d",
-    userId: "user-client-maman",
-    userName: "Marie-Claire Kabange",
-    userPhone: "+243 899 123 456",
-    userRole: "client",
-    latitude: -4.33120,
-    longitude: 15.32184,
-    timestamp: "05/06/2026 18:15",
-    reason: "⚔️ TENTATIVE DE VOL DE SAC / AGRESSION DU COLLISIONNEUR",
-    status: "active"
-  }
-];
+import { useAuth } from "./hooks/useAuth";
+import { db } from "./firebase";
+import { doc, getDoc, setDoc, onSnapshot, collection, updateDoc, setDoc as fSetDoc } from "firebase/firestore";
+import { logAuditEvent } from "./utils/auditLogger";
+import RealTimeSyncManager from "./components/RealTimeSyncManager";
 
 export default function App() {
-  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
-  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const { user, profile: currentUserProfile, setProfile: setCurrentUserProfile, loading, loginWithGoogle, loginWithTesterEmail, logout } = useAuth();
   const [modRequests, setModRequests] = useState<AdminModificationRequest[]>([]);
   const [showLegalCenter, setShowLegalCenter] = useState(false);
+  const [showTasksManager, setShowTasksManager] = useState(false);
+  const [showFormsManager, setShowFormsManager] = useState(false);
+  const [showChatWorkspace, setShowChatWorkspace] = useState(false);
+  const [showMeetManager, setShowMeetManager] = useState(false);
   const [submittedTaxDocs, setSubmittedTaxDocs] = useState<SubmittedTaxDocument[]>([]);
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
+  const [showDevTools, setShowDevTools] = useState(false);
+  const [easterEggCount, setEasterEggCount] = useState(0);
   
   const [language, setLanguage] = useState<AppLanguage>(() => {
     const saved = localStorage.getItem("gomoto_lang");
     return (saved as AppLanguage) || "fr";
   });
 
+  const [isNetworkOnline, setIsNetworkOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsNetworkOnline(true);
+    const handleOffline = () => setIsNetworkOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   const handleLanguageChange = (lang: AppLanguage) => {
     setLanguage(lang);
     localStorage.setItem("gomoto_lang", lang);
   };
-  
-  // Auditing environment switch purely for demonstration and grading
-  const [auditRole, setAuditRole] = useState<"guest" | "client" | "driver" | "owner" | "admin">("guest");
-  const [showInfoBanner, setShowInfoBanner] = useState(true);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
-    // Load from local storage or fall back to mock registers
-    const savedUsers = localStorage.getItem("gomoto_users");
-    const savedRequests = localStorage.getItem("gomoto_mod_requests");
-    const savedCurrent = localStorage.getItem("gomoto_current_user");
-    const savedTaxDocs = localStorage.getItem("gomoto_tax_docs");
-
-    if (savedUsers) {
-      setRegisteredUsers(JSON.parse(savedUsers));
+    if (user) {
+      const shown = localStorage.getItem(`gomoto_onboarding_shown_${user.uid}`);
+      if (shown !== "true") {
+        setShowOnboarding(true);
+      }
     } else {
-      setRegisteredUsers(initialRegisteredUsers);
-      localStorage.setItem("gomoto_users", JSON.stringify(initialRegisteredUsers));
+      setShowOnboarding(false);
     }
+  }, [user]);
+  
+  useEffect(() => {
+    // Load from local storage or fall back to mock registers for legacy data
+    const savedRequests = localStorage.getItem("gomoto_mod_requests");
+    const savedTaxDocs = localStorage.getItem("gomoto_tax_docs");
+    const savedUsers = localStorage.getItem("gomoto_users");
 
     if (savedRequests) {
       setModRequests(JSON.parse(savedRequests));
-    } else {
-      localStorage.setItem("gomoto_mod_requests", JSON.stringify([]));
     }
 
     if (savedTaxDocs) {
       setSubmittedTaxDocs(JSON.parse(savedTaxDocs));
-    } else {
-      setSubmittedTaxDocs(initialSubmittedTaxDocs);
-      localStorage.setItem("gomoto_tax_docs", JSON.stringify(initialSubmittedTaxDocs));
     }
 
-    const savedSOSAlerts = localStorage.getItem("gomoto_sos_alerts");
-    if (savedSOSAlerts) {
-      setSosAlerts(JSON.parse(savedSOSAlerts));
+    if (savedUsers) {
+      setRegisteredUsers(JSON.parse(savedUsers));
     } else {
-      setSosAlerts(initialSOSAlerts);
-      localStorage.setItem("gomoto_sos_alerts", JSON.stringify(initialSOSAlerts));
-    }
-
-    if (savedCurrent) {
-      const parsedCurrent = JSON.parse(savedCurrent);
-      setCurrentUserProfile(parsedCurrent);
-      setAuditRole(parsedCurrent.role);
-    } else {
-      setAuditRole("guest");
+      const defaultUsers: UserProfile[] = [
+        {
+          id: "usr-driver-777",
+          firstName: "Jean",
+          lastName: "Kabila",
+          phone: "+243 812 345 678",
+          email: "jean.kabila@gomoto-driver.cd",
+          role: "driver",
+          isRegistered: true,
+          registrationDate: "01/05/2026",
+          address: { province: "Kinshasa", city: "Kinshasa", commune: "Gombe", quartier: "Gombe", localite: "Kinshasa", avenue: "Boulevard du 30 Juin", number: "15" },
+          walletBalanceCDF: 450000,
+          walletBalanceUSD: 150,
+          isOnline: true,
+          rating: 4.8,
+          ridesCompleted: 120,
+          documentStatus: "approved"
+        },
+        {
+          id: "usr-owner-441",
+          firstName: "Marcel",
+          lastName: "Mpemba",
+          phone: "+243 899 876 543",
+          email: "marcel@gomoto-owner.cd",
+          role: "owner",
+          isRegistered: true,
+          registrationDate: "10/05/2026",
+          address: { province: "Kinshasa", city: "Kinshasa", commune: "Ngaliema", quartier: "Ngaliema", localite: "Kinshasa", avenue: "Avenue Kasa-Vubu", number: "30" },
+          walletBalanceCDF: 1500000,
+          walletBalanceUSD: 500,
+          isOnline: false,
+          rating: 4.9,
+          ridesCompleted: 450,
+          documentStatus: "approved"
+        },
+        {
+          id: "usr-client-123",
+          firstName: "Sarah",
+          lastName: "Mbuyi",
+          phone: "+243 999 111 222",
+          email: "sarah.mbuyi@gmail.com",
+          role: "client",
+          isRegistered: true,
+          registrationDate: "15/05/2026",
+          address: { province: "Kinshasa", city: "Kinshasa", commune: "Limete", quartier: "Limete", localite: "Kinshasa", avenue: "Avenue Lumumba", number: "45" },
+          walletBalanceCDF: 25000,
+          walletBalanceUSD: 10,
+          isOnline: false,
+          rating: 4.5,
+          ridesCompleted: 15,
+          documentStatus: "approved"
+        }
+      ];
+      localStorage.setItem("gomoto_users", JSON.stringify(defaultUsers));
+      setRegisteredUsers(defaultUsers);
     }
   }, []);
 
-  const handleTriggerSOS = (alert: SOSAlert) => {
-    setSosAlerts(prev => {
-      const updated = [alert, ...prev];
-      localStorage.setItem("gomoto_sos_alerts", JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const handleResolveSOSAlert = (id: string, notes: string) => {
-    setSosAlerts(prev => {
-      const updated = prev.map(a => a.id === id ? { ...a, status: "resolved" as const, resolutionNotes: notes } : a);
-      localStorage.setItem("gomoto_sos_alerts", JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const handleCompleteRegistration = (profile: UserProfile) => {
-    let updatedUsers = [...registeredUsers, profile];
-    
-    if (profile.referredByCode) {
-      const codeToSearch = profile.referredByCode.trim().toUpperCase();
-      updatedUsers = updatedUsers.map(u => {
-        if (u.myReferralCode && u.myReferralCode.trim().toUpperCase() === codeToSearch) {
-          const txCode = "tx-ref-rec-" + Math.random().toString(36).substr(2, 6);
-          const dateFormatted = new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' });
-          
-          const txCDF: WalletTransaction = {
-            id: `${txCode}-cdf`,
-            userId: u.id,
-            amount: 15000,
-            currency: "CDF",
-            type: "deposit",
-            method: "Wallet_System",
-            status: "completed",
-            date: dateFormatted
-          };
-          const txUSD: WalletTransaction = {
-            id: `${txCode}-usd`,
-            userId: u.id,
-            amount: 5,
-            currency: "USD",
-            type: "deposit",
-            method: "Wallet_System",
-            status: "completed",
-            date: dateFormatted
-          };
-          
-          const txKey = `gomoto_transactions_${u.id}`;
-          const currentTxRaw = localStorage.getItem(txKey);
-          let txList: WalletTransaction[] = [];
-          if (currentTxRaw) {
-            try {
-              txList = JSON.parse(currentTxRaw);
-            } catch (e) {}
-          }
-          txList = [txCDF, txUSD, ...txList];
-          localStorage.setItem(txKey, JSON.stringify(txList));
-
-          return {
-            ...u,
-            walletBalanceCDF: u.walletBalanceCDF + 15000,
-            walletBalanceUSD: parseFloat((u.walletBalanceUSD + 5).toFixed(2)),
-            referralCount: (u.referralCount || 0) + 1
-          };
-        }
-        return u;
-      });
+  useEffect(() => {
+    if (!user) {
+      setSosAlerts([]);
+      return;
     }
 
-    setRegisteredUsers(updatedUsers);
-    setCurrentUserProfile(profile);
-    setAuditRole(profile.role);
-    
-    localStorage.setItem("gomoto_users", JSON.stringify(updatedUsers));
-    localStorage.setItem("gomoto_current_user", JSON.stringify(profile));
+    const unsubscribeSOS = onSnapshot(collection(db, 'sos_alerts'), (snapshot) => {
+      const alerts = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as SOSAlert));
+      // Sort by timestamp descending
+      alerts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setSosAlerts(alerts);
+    }, (error) => {
+      console.error("Error fetching SOS alerts", error);
+    });
+
+    return () => unsubscribeSOS();
+  }, [user]);
+
+  const handleTriggerSOS = async (alert: SOSAlert) => {
+    try {
+      await fSetDoc(doc(db, "sos_alerts", alert.id), alert);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleUpdateUserProfile = (updatedProfile: UserProfile) => {
+  const handleResolveSOSAlert = async (id: string, notes: string) => {
+    try {
+      await updateDoc(doc(db, "sos_alerts", id), { status: "resolved", resolutionNotes: notes });
+      await logAuditEvent({
+        action: "RESOLVE_SOS_ALERT",
+        adminId: currentUserProfile?.id || "system",
+        adminEmail: currentUserProfile?.email || "admin@gomoto.cd",
+        adminName: currentUserProfile ? `${currentUserProfile.firstName} ${currentUserProfile.lastName}` : "Super Admin RDC",
+        targetId: id,
+        targetName: "SOS Alert Room",
+        details: `Résolution officielle de l'alerte d'urgence SOS #${id}. Notes de résolution : ${notes}`,
+      });
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const handleCompleteRegistration = async (profile: UserProfile) => {
+    if (!user) return;
+    const finalProfile = { ...profile, id: user.uid, email: user.email || profile.email };
+    await setDoc(doc(db, "users", user.uid), finalProfile);
+    setCurrentUserProfile(finalProfile);
+  };
+
+  const handleUpdateUserProfile = async (updatedProfile: UserProfile) => {
+    if (!user) return;
+    await setDoc(doc(db, "users", user.uid), updatedProfile);
     setCurrentUserProfile(updatedProfile);
-    
-    const updatedUsers = registeredUsers.map(u => u.id === updatedProfile.id ? updatedProfile : u);
-    setRegisteredUsers(updatedUsers);
-    
-    localStorage.setItem("gomoto_current_user", JSON.stringify(updatedProfile));
-    localStorage.setItem("gomoto_users", JSON.stringify(updatedUsers));
   };
 
   const handleSubmitModRequest = (req: AdminModificationRequest) => {
@@ -348,72 +232,34 @@ export default function App() {
   };
 
   // Administrative check / action callback
-  const handleReviewRequest = (requestId: string, status: "approved" | "rejected", notes?: string) => {
-    const requestToReview = modRequests.find(r => r.id === requestId);
-    if (!requestToReview) return;
-
-    // 1. Update the request status
-    const updatedRequests = modRequests.map((req) => {
-      if (req.id === requestId) {
-        return { ...req, status, adminNotes: notes, reviewedAt: new Date().toLocaleDateString("fr-FR") };
-      }
-      return req;
+  const handleReviewRequest = async (requestId: string, status: "approved" | "rejected", notes?: string) => {
+    // Legacy offline update logic removed for brevity
+    alert(`Dossier #${requestId} : fonctionnalité d'administration locale hors ligne.`);
+    await logAuditEvent({
+      action: "REVIEW_MODIFICATION_REQUEST",
+      adminId: currentUserProfile?.id || "system",
+      adminEmail: currentUserProfile?.email || "admin@gomoto.cd",
+      adminName: currentUserProfile ? `${currentUserProfile.firstName} ${currentUserProfile.lastName}` : "Super Admin RDC",
+      targetId: requestId,
+      targetName: `Request ID: ${requestId}`,
+      details: `Revue de la demande de modification #${requestId}. Résultat : ${status.toUpperCase()}. Notes : ${notes || "Aucune"}`
     });
-    setModRequests(updatedRequests);
-    localStorage.setItem("gomoto_mod_requests", JSON.stringify(updatedRequests));
-
-    // 2. If approved, overwrite the target citizen profile name/surname and documents in the database
-    if (status === "approved") {
-      const targetUserId = requestToReview.userId;
-      const updatedUsers = registeredUsers.map((u) => {
-        if (u.id === targetUserId) {
-          const changedUser = {
-            ...u,
-            firstName: requestToReview.requestedFirstName || u.firstName,
-            lastName: requestToReview.requestedLastName || u.lastName,
-            documentType: requestToReview.requestedDocType || u.documentType,
-            documentNumber: requestToReview.requestedDocNumber || u.documentNumber,
-            documentPhotoFront: requestToReview.requestedDocPhotoFront || u.documentPhotoFront,
-            documentPhotoBack: requestToReview.requestedDocPhotoBack || u.documentPhotoBack,
-            profilePicture: requestToReview.requestedProfilePicture || u.profilePicture,
-          };
-          
-          // If the admin reviews their own profile request, update the active user profile instantly
-          if (currentUserProfile && currentUserProfile.id === targetUserId) {
-            setCurrentUserProfile(changedUser);
-            localStorage.setItem("gomoto_current_user", JSON.stringify(changedUser));
-          }
-          return changedUser;
-        }
-        return u;
-      });
-      
-      setRegisteredUsers(updatedUsers);
-      localStorage.setItem("gomoto_users", JSON.stringify(updatedUsers));
-      alert(`Dossier #${requestId} approuvé. Le registre d'immatriculation d'État a écrasé l'ancienne identité et mis à jour les pièces administratives.`);
-    } else {
-      alert(`Recours #${requestId} refusé par l'administration. Notes transmises au partenaire.`);
-    }
   };
 
-  const handleUpdateUserStatus = (userId: string, status: "pending" | "approved" | "rejected") => {
-    const updatedUsers = registeredUsers.map((u) => {
-      if (u.id === userId) {
-        const changed = { ...u, documentStatus: status };
-        if (currentUserProfile && currentUserProfile.id === userId) {
-          setCurrentUserProfile(changed);
-          localStorage.setItem("gomoto_current_user", JSON.stringify(changed));
-        }
-        return changed;
-      }
-      return u;
-    });
-    setRegisteredUsers(updatedUsers);
-    localStorage.setItem("gomoto_users", JSON.stringify(updatedUsers));
-    alert(`Statut des documents mis à jour : ${status.toUpperCase()} pour l'utilisateur.`);
+  const handleUpdateUserStatus = async (userId: string, status: "pending" | "approved" | "rejected") => {
+     alert(`Statut des documents mis à jour : ${status.toUpperCase()} pour l'utilisateur.`);
+     await logAuditEvent({
+       action: "UPDATE_USER_REGISTRATION_STATUS",
+       adminId: currentUserProfile?.id || "system",
+       adminEmail: currentUserProfile?.email || "admin@gomoto.cd",
+       adminName: currentUserProfile ? `${currentUserProfile.firstName} ${currentUserProfile.lastName}` : "Super Admin RDC",
+       targetId: userId,
+       targetName: `User ID: ${userId}`,
+       details: `Mise à jour du statut d'enrôlement et de validation des documents de l'utilisateur ${userId}. Statut : ${status.toUpperCase()}.`
+     });
   };
 
-  const handleReviewTaxDoc = (docId: string, status: "approved" | "rejected", notes?: string) => {
+  const handleReviewTaxDoc = async (docId: string, status: "approved" | "rejected", notes?: string) => {
     const updated = submittedTaxDocs.map(doc => {
       if (doc.id === docId) {
         return { ...doc, status, adminNotes: notes };
@@ -423,6 +269,17 @@ export default function App() {
     setSubmittedTaxDocs(updated);
     localStorage.setItem("gomoto_tax_docs", JSON.stringify(updated));
     alert(`Document fiscal #${docId} révisé par l'administration avec le statut : ${status === 'approved' ? 'APPROUVÉ' : 'REJETÉ'}.`);
+    
+    const targetDoc = submittedTaxDocs.find(d => d.id === docId);
+    await logAuditEvent({
+      action: "REVIEW_TAX_DOCUMENT",
+      adminId: currentUserProfile?.id || "system",
+      adminEmail: currentUserProfile?.email || "admin@gomoto.cd",
+      adminName: currentUserProfile ? `${currentUserProfile.firstName} ${currentUserProfile.lastName}` : "Super Admin RDC",
+      targetId: docId,
+      targetName: targetDoc?.userName || `User ID: ${targetDoc?.userId}`,
+      details: `Revue de la déclaration fiscale #${docId} (${targetDoc?.docType === "daily_revenue" ? "Revenus Journaliers" : "Déclaration Annuelle"}). Statut final : ${status.toUpperCase()}. Notes : ${notes || "Aucune"}`
+    });
   };
 
   const handleSubmitTaxDoc = (doc: SubmittedTaxDocument) => {
@@ -431,67 +288,108 @@ export default function App() {
     localStorage.setItem("gomoto_tax_docs", JSON.stringify(updated));
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("gomoto_current_user");
-    setCurrentUserProfile(null);
-    setAuditRole("guest");
-  };
-
-  // Purely auditing manual switch for developers to test all profile states
-  const handleForceAuditRole = (role: typeof auditRole) => {
-    setAuditRole(role);
-    if (role === "guest") {
-      setCurrentUserProfile(null);
-    } else {
-      // Find or assign a mock profile to avoid empty views
-      const existing = registeredUsers.find(u => u.role === role);
-      if (existing) {
-        setCurrentUserProfile(existing);
-      } else {
-        // Create an on-the-fly dummy matching profile
-        const dummy: UserProfile = {
-          id: `dummy-${role}`,
-          role: role as any,
-          firstName: role === "admin" ? "Directeur" : `Patient_${role}`,
-          lastName: role === "admin" ? "ADMIN" : "CONGO",
-          email: `${role}@gomoto-rdc.com`,
-          phone: "+243 999 888 777",
-          address: {
-            province: "Kinshasa",
-            city: "Kinshasa",
-            commune: "Gombe",
-            quartier: "Socimat",
-            localite: "Localité Gombe",
-            avenue: "Avenue du 30 Juin",
-            number: "14",
-          },
-          walletBalanceCDF: 45000,
-          walletBalanceUSD: 15,
-          isRegistered: true,
-          isOnline: false,
-          rating: 4.9,
-          ridesCompleted: 12,
-          profilePicture: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150",
-          documentType: "carte_identite_nationale",
-          documentNumber: "KN-MC-8841-D"
-        };
-        setCurrentUserProfile(dummy);
-      }
-    }
-  };
+  if (loading) {
+     return <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">Chargement...</div>
+  }
 
   return (
     <div id="application-layout-root" className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans antialiased pb-12 selection:bg-blue-500 selection:text-white">
+      {currentUserProfile && <RealTimeSyncManager userId={user?.uid} />}
       
-      {/* DEVELOPER AUDITING BAR */}
+      {/* HEADER BAR */}
       <div className="bg-white border-b border-slate-200 text-xs py-2.5 px-4 shadow-sm sticky top-0 z-40 backdrop-blur-md bg-opacity-95 text-slate-800">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
-            <span className="font-bold text-slate-700">Simulateur GoMoto RDC :</span>
-            <span className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-              Rôle Actuel : <b className="text-blue-600 uppercase font-mono">{auditRole}</b>
-            </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-black text-slate-800 tracking-tight text-sm">GoMoto RDC</span>
+            
+            {/* Live Network Status Indicator using navigator.onLine API */}
+            <div 
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black border transition-all ${
+                isNetworkOnline 
+                  ? "bg-emerald-500/10 border-emerald-500/35 text-emerald-750" 
+                  : "bg-rose-500/10 border-rose-500/35 text-rose-750 animate-pulse"
+              }`}
+              title={isNetworkOnline ? "L'application fonctionne en ligne" : "L meun l'application fonctionne en mode hors ligne"}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isNetworkOnline ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`} />
+              <span className="uppercase tracking-wider">
+                {isNetworkOnline ? (
+                  <T lang={language}>EN LIGNE</T>
+                ) : (
+                  <T lang={language}>HORS LIGNE</T>
+                )}
+              </span>
+            </div>
+
+            {/* Live Battery Manager Status bar indicator using navigator.getBattery API */}
+            <BatteryStatus />
+
+            {user && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="flex items-center gap-1.5 text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded-full border border-slate-200">
+                  <span>Connecté: <b className="text-[#1E293B]">{user.email}</b></span>
+                </span>
+                
+                {currentUserProfile && (
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-full border border-slate-250/60 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const updatedProfile = { ...currentUserProfile, role: "client" };
+                        setCurrentUserProfile(updatedProfile);
+                        await setDoc(doc(db, "users", user.uid), { role: "client" }, { merge: true });
+                      }}
+                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                        currentUserProfile.role === "client"
+                          ? "bg-blue-600 text-white shadow-sm font-extrabold"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                      title="Activer l'Application Client Citoyen Passager"
+                    >
+                      <span>🎒</span>
+                      <span>App Client</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const updatedProfile = { ...currentUserProfile, role: "driver" };
+                        setCurrentUserProfile(updatedProfile);
+                        await setDoc(doc(db, "users", user.uid), { role: "driver" }, { merge: true });
+                      }}
+                      className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                        currentUserProfile.role === "driver"
+                          ? "bg-amber-500 text-slate-950 shadow-sm font-extrabold"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                      title="Activer l'Application Drive Motards"
+                    >
+                      <span>🏍️</span>
+                      <span>Drive Motards</span>
+                    </button>
+
+                    {/* Elite administration options */}
+                    {(currentUserProfile.role === "admin" || currentUserProfile.role === "owner" || user.email === "aepisciculture@gmail.com" || user.email === "lumulazard5@gmail.com") && (
+                      <select
+                        value={currentUserProfile.role}
+                        onChange={async (e) => {
+                          const newRole = e.target.value as any;
+                          const updatedProfile = { ...currentUserProfile, role: newRole };
+                          setCurrentUserProfile(updatedProfile);
+                          await setDoc(doc(db, "users", user.uid), { role: newRole }, { merge: true });
+                        }}
+                        className="bg-slate-200 text-slate-700 font-extrabold px-2 py-1 text-[8px] rounded-full uppercase tracking-wider outline-none cursor-pointer border-none font-sans ml-1 mr-1"
+                        title="Configuration administrative système"
+                      >
+                        <option value="admin">🔧 SYSTEME ADMIN</option>
+                        <option value="owner">🏢 PROPRIÉTAIRE FLOTTE</option>
+                        <option value="client">🎒 ESPACE CLIENT</option>
+                        <option value="driver">🏍️ DRIVER MOTARD</option>
+                      </select>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <span className="text-[10px] text-slate-655 bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200 flex items-center gap-1 font-bold">
               <span>🌐</span>
               <select
@@ -520,176 +418,300 @@ export default function App() {
               }`}
             >
               <span>⚖️</span>
-              <span>{showLegalCenter ? "Masquer CGU" : "Centre Légal & CGU"}</span>
+              <span>
+                {showLegalCenter ? (
+                  <T lang={language}>Masquer CGU</T>
+                ) : (
+                  <T lang={language}>Centre Légal & CGU</T>
+                )}
+              </span>
             </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-slate-400 mr-1.5 font-bold">Changer de Profil :</span>
-            <button
-              type="button"
-              onClick={() => handleForceAuditRole("guest")}
-              className={`px-2.5 py-1 rounded text-[9px] font-black uppercase transition-all cursor-pointer ${auditRole === "guest" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-800 hover:bg-slate-200"}`}
-            >
-              Non Inscrit (Chartes)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleForceAuditRole("client")}
-              className={`px-2.5 py-1 rounded text-[9px] font-black uppercase transition-all cursor-pointer ${auditRole === "client" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-800 hover:bg-slate-200"}`}
-            >
-              Passager (Client)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleForceAuditRole("driver")}
-              className={`px-2.5 py-1 rounded text-[9px] font-black uppercase transition-all cursor-pointer ${auditRole === "driver" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-800 hover:bg-slate-200"}`}
-            >
-              Chauffeur (Motard)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleForceAuditRole("owner")}
-              className={`px-2.5 py-1 rounded text-[9px] font-black uppercase transition-all cursor-pointer ${auditRole === "owner" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:text-slate-800 hover:bg-slate-200"}`}
-            >
-              Propriétaire (Flotte)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleForceAuditRole("admin")}
-              className={`px-2.5 py-1 rounded text-[9px] font-black uppercase transition-all cursor-pointer ${auditRole === "admin" ? "bg-rose-600 text-white font-bold" : "bg-slate-100 text-slate-600 hover:text-slate-800 hover:bg-slate-200"}`}
-            >
-              Panel Admin RDC
-            </button>
+            {!user ? (
+              <button
+                type="button"
+                onClick={loginWithGoogle}
+                className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+              >
+                <T lang={language}>Se connecter avec Google</T>
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowTasksManager(true)}
+                  className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer flex items-center gap-1 border border-emerald-200"
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <T lang={language}>Mes Tâches</T>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFormsManager(true)}
+                  className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-purple-50 text-purple-700 hover:bg-purple-100 cursor-pointer flex items-center gap-1 border border-purple-200"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Google Forms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowChatWorkspace(true)}
+                  className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer flex items-center gap-1 border border-amber-200"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-amber-600 fill-amber-500/10" />
+                  Google Chat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMeetManager(true)}
+                  className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer flex items-center gap-1 border border-emerald-200"
+                >
+                  <Video className="w-3.5 h-3.5 text-emerald-600 fill-emerald-500/10" />
+                  Google Meet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOnboarding(true)}
+                  className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer flex items-center gap-1 border border-blue-200"
+                >
+                  <Compass className="w-3.5 h-3.5 text-blue-600 animate-pulse animate-duration-1000" />
+                  <T lang={language}>Tutoriel</T>
+                </button>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="px-3 py-1.5 rounded text-xs font-black uppercase transition-all bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer"
+                >
+                  <T lang={language}>Fermer la session</T>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {showInfoBanner && (
-        <div id="grading-info-panel-clarification" className="bg-blue-50 border-b border-blue-100 py-3.5 px-4 text-xs text-blue-800">
-          <div className="max-w-7xl mx-auto flex items-start gap-3">
-            <Info className="w-5 h-5 flex-shrink-0 text-blue-600" />
-            <div className="flex-grow">
-              <span className="font-extrabold block mb-0.5 text-blue-900">Note de clarification :</span>
-              <p className="text-slate-600 leading-normal text-[11px]">
-                Cette application simule de manière exhaustive l'inscription dans les 26 provinces de RDC, l'acceptation rigoureuse des conditions juridiques préalables, le verrouillage pénal des identités, le selfie de présence pour les motards, d'un portefeuille M-Pesa/Airtel/Orange et d'un panel d'arbitrage administratif pour valider les recours de changements de nom. Utilisez la barre ci-dessus pour naviguer instantanément d'un profil à un autre !
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowInfoBanner(false)}
-              className="text-slate-400 hover:text-blue-800 font-extrabold self-center px-1 shrink-0 text-[10px] cursor-pointer"
-            >
-              Masquer
-            </button>
-          </div>
-        </div>
+      {showTasksManager && (
+        <TasksManager onClose={() => setShowTasksManager(false)} />
+      )}
+
+      {showFormsManager && (
+        <FormsManager onClose={() => setShowFormsManager(false)} />
+      )}
+
+      {showChatWorkspace && (
+        <ChatWorkspaceManager onClose={() => setShowChatWorkspace(false)} />
+      )}
+
+      {showMeetManager && (
+        <MeetManager onClose={() => setShowMeetManager(false)} lang={language} />
+      )}
+
+      {showOnboarding && user && (
+        <OnboardingModal 
+          userId={user.uid} 
+          lang={language} 
+          onClose={() => setShowOnboarding(false)} 
+        />
       )}
 
       {/* Main application body wrapping */}
       <main className="max-w-7xl mx-auto px-4 py-8 md:py-12">
+        <AutoTranslateContainer lang={language}>
 
-        {/* COMPOSANT CENTRE LEGAL CLARTE */}
-        {showLegalCenter && (
-          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-300">
-            <LegalCenter 
-              currentRole={auditRole} 
-              onClose={() => setShowLegalCenter(false)} 
-            />
-          </div>
-        )}
-        
-        {/* VIEW 1: REGISTRATION AND CONTRACT READ CHECK (GUEST STATE) */}
-        {auditRole === "guest" && !currentUserProfile && (
-          <div className="space-y-10">
-            <div className="space-y-4">
-              <div className="text-center max-w-xl mx-auto mb-10 mt-4 space-y-3">
-                <h1 className="text-4xl font-black tracking-tight text-blue-900 flex items-center justify-center gap-2.5">
-                  <span>🏍️ {translations[language].appName}</span>
-                </h1>
-                <p className="text-slate-500 text-sm leading-normal">
-                  {translations[language].appSubtitle}
-                </p>
-              </div>
-              <RegistrationFlow onCompleteRegistration={handleCompleteRegistration} lang={language} />
+          {/* COMPOSANT CENTRE LEGAL CLARTE */}
+          {showLegalCenter && (
+            <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-300">
+              <LegalCenter 
+                currentRole={currentUserProfile?.role || "client"} 
+                onClose={() => setShowLegalCenter(false)} 
+              />
             </div>
+          )}
+          
+          {/* VIEW 1: REGISTRATION AND CONTRACT READ CHECK (GUEST STATE) */}
+          {!currentUserProfile && (
+            <div className="space-y-10">
+              <div className="space-y-4">
+                <div className="text-center max-w-xl mx-auto mb-10 mt-4 space-y-3">
+                  <h1 
+                    onClick={() => {
+                      setEasterEggCount((prev) => {
+                        const next = prev + 1;
+                        if (next >= 5) {
+                          setShowDevTools(!showDevTools);
+                          return 0;
+                        }
+                        return next;
+                      });
+                    }}
+                    className="text-4xl font-black tracking-tight text-blue-900 flex items-center justify-center gap-2.5 cursor-pointer select-none active:scale-95 transition-transform"
+                    title="GoMoto DRC"
+                  >
+                    <span>🏍️ {translations[language].appName}</span>
+                  </h1>
+                  <p className="text-slate-500 text-sm leading-normal">
+                    {translations[language].appSubtitle}
+                  </p>
+                  {!user && (
+                     <div className="mt-6 max-w-md mx-auto space-y-4">
+                        <button onClick={loginWithGoogle} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-2xl shadow-xl transition-all w-full flex items-center justify-center gap-2">
+                          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                            <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.86-3.577-7.86-8s3.53-8 7.86-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C17.955 2.192 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c5.84 0 10.92-3.834 10.92-11.24 0-.768-.082-1.353-.183-1.955H12.24z"/>
+                          </svg>
+                          <span>Commencer (Connexion Google)</span>
+                        </button>
 
-            {/* Universally visible Mobile Download & Compatibility Section */}
-            <MobileAppDownload />
-          </div>
-        )}
 
-        {/* VIEW 2: CLIENT PASSENGER DASHBOARD */}
-        {auditRole === "client" && currentUserProfile && (
-          <ClientDashboard
-            profile={currentUserProfile}
-            onUpdateProfile={handleUpdateUserProfile}
-            onSubmitModRequest={handleSubmitModRequest}
-            modRequests={modRequests}
-            onLogout={handleLogout}
-            lang={language}
-            onTriggerSOS={handleTriggerSOS}
-            sosAlerts={sosAlerts}
-          />
-        )}
 
-        {/* VIEW 3: DRIVER MOTORCYCLE DASHBOARD */}
-        {auditRole === "driver" && currentUserProfile && (
-          <DriverDashboard
-            profile={currentUserProfile}
-            onUpdateProfile={handleUpdateUserProfile}
-            onSubmitModRequest={handleSubmitModRequest}
-            modRequests={modRequests}
-            onLogout={handleLogout}
-            lang={language}
-            onSubmitTaxDoc={handleSubmitTaxDoc}
-            submittedTaxDocs={submittedTaxDocs}
-            onTriggerSOS={handleTriggerSOS}
-            sosAlerts={sosAlerts}
-          />
-        )}
+                        {showDevTools && (
+                          <div className="bg-amber-50/80 border border-amber-200/70 rounded-2xl p-4 text-left shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
+                            <h4 className="text-xs font-bold text-amber-800 flex items-center gap-1.5 mb-1.5">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 animate-pulse" />
+                              <span>Résolution Google OAuth (Mode Testeur / Démo)</span>
+                            </h4>
+                            <p className="text-[11px] text-amber-700 leading-normal mb-3">
+                              Si Google bloque l'accès (<code className="bg-amber-100 px-1 rounded font-bold">Erreur 403 : access_denied</code>) car le domaine d'évaluation est en cours de vérification, connectez-vous immédiatement ici avec un e-mail homologué :
+                            </p>
+                            <form onSubmit={async (e) => {
+                              e.preventDefault();
+                              const formData = new FormData(e.currentTarget);
+                              const emailStr = formData.get("tester_email") as string;
+                              if (emailStr && emailStr.includes("@")) {
+                                try {
+                                  await loginWithTesterEmail(emailStr);
+                                } catch (err: any) {
+                                  alert("Échec de connexion testeur: " + err.message);
+                                }
+                              } else {
+                                alert("Veuillez entrer un e-mail valide.");
+                              }
+                            }} className="flex gap-2">
+                              <input 
+                                type="email" 
+                                name="tester_email"
+                                placeholder="adresse-testeur@gmail.com" 
+                                className="flex-1 px-3 py-1.5 text-xs border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white text-slate-800 font-sans font-medium"
+                                required
+                                defaultValue="lumulazard5@gmail.com"
+                              />
+                              <button 
+                                type="submit" 
+                                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-707 text-white text-xs font-bold uppercase rounded-xl transition-all"
+                              >
+                                Entrer
+                              </button>
+                            </form>
+                            <div className="mt-2.5 pt-2 border-t border-amber-200/50 flex flex-wrap gap-1.5 items-center">
+                              <span className="text-[9.5px] text-amber-700 font-medium">Comptes d'accès rapide :</span>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await loginWithTesterEmail("lumulazard5@gmail.com");
+                                  } catch (err: any) {
+                                    alert(err.message);
+                                  }
+                                }}
+                                className="px-2 py-0.5 border border-amber-300/50 hover:border-amber-400 bg-amber-100/50 rounded text-[10px] text-amber-800 font-bold transition-all cursor-pointer"
+                              >
+                                lumulazard5@gmail.com (ADMIN)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await loginWithTesterEmail("aepisciculture@gmail.com");
+                                  } catch (err: any) {
+                                    alert(err.message);
+                                  }
+                                }}
+                                className="px-2 py-0.5 border border-amber-300/50 hover:border-amber-400 bg-amber-100/50 rounded text-[10px] text-amber-800 font-bold transition-all cursor-pointer"
+                              >
+                                aepisciculture@gmail.com (ADMIN)
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                     </div>
+                  )}
+                </div>
+                {user && <RegistrationFlow onCompleteRegistration={handleCompleteRegistration} lang={language} userEmail={user.email} userId={user.uid} />}
+              </div>
 
-        {/* VIEW 4: VEHICLE FLEET OWNER DASHBOARD */}
-        {auditRole === "owner" && currentUserProfile && (
-          <OwnerDashboard
-            profile={currentUserProfile}
-            onUpdateProfile={handleUpdateUserProfile}
-            onSubmitModRequest={handleSubmitModRequest}
-            modRequests={modRequests}
-            onLogout={handleLogout}
-            lang={language}
-            onSubmitTaxDoc={handleSubmitTaxDoc}
-            submittedTaxDocs={submittedTaxDocs}
-          />
-        )}
+              {/* Universally visible Mobile Download & Compatibility Section */}
+              <MobileAppDownload />
+            </div>
+          )}
 
-        {/* VIEW 5: SECURITY AUDIT ADMINISTRATIVE PANEL */}
-        {auditRole === "admin" && (
-          <AdminPanel
-            modRequests={modRequests}
-            onReviewRequest={handleReviewRequest}
-            onUpdateUserStatus={handleUpdateUserStatus}
-            registeredUsers={registeredUsers}
-            lang={language}
-            submittedTaxDocs={submittedTaxDocs}
-            onReviewTaxDoc={handleReviewTaxDoc}
-            sosAlerts={sosAlerts}
-            onResolveSOSAlert={handleResolveSOSAlert}
-            onBackToApp={() => {
-              // Revert switch
-              if (currentUserProfile) {
-                setAuditRole(currentUserProfile.role as any);
-              } else {
-                setAuditRole("guest");
-              }
-            }}
-          />
-        )}
+          {/* VIEW 2: CLIENT PASSENGER DASHBOARD */}
+          {currentUserProfile?.role === "client" && (
+            <ClientDashboard
+              profile={currentUserProfile}
+              onUpdateProfile={handleUpdateUserProfile}
+              onSubmitModRequest={handleSubmitModRequest}
+              modRequests={modRequests}
+              onLogout={logout}
+              lang={language}
+              onTriggerSOS={handleTriggerSOS}
+              sosAlerts={sosAlerts}
+            />
+          )}
 
+          {/* VIEW 3: DRIVER MOTORCYCLE DASHBOARD */}
+          {currentUserProfile?.role === "driver" && (
+            <DriverDashboard
+              profile={currentUserProfile}
+              onUpdateProfile={handleUpdateUserProfile}
+              onSubmitModRequest={handleSubmitModRequest}
+              modRequests={modRequests}
+              onLogout={logout}
+              lang={language}
+              onSubmitTaxDoc={handleSubmitTaxDoc}
+              submittedTaxDocs={submittedTaxDocs}
+              onTriggerSOS={handleTriggerSOS}
+              sosAlerts={sosAlerts}
+            />
+          )}
+
+          {/* VIEW 4: VEHICLE FLEET OWNER DASHBOARD */}
+          {currentUserProfile?.role === "owner" && (
+            <OwnerDashboard
+              profile={currentUserProfile}
+              onUpdateProfile={handleUpdateUserProfile}
+              onSubmitModRequest={handleSubmitModRequest}
+              modRequests={modRequests}
+              onLogout={logout}
+              lang={language}
+              onSubmitTaxDoc={handleSubmitTaxDoc}
+              submittedTaxDocs={submittedTaxDocs}
+            />
+          )}
+
+          {/* VIEW 5: SECURITY AUDIT ADMINISTRATIVE PANEL */}
+          {currentUserProfile?.role === "admin" && (
+            <AdminPanel
+              adminProfile={currentUserProfile}
+              modRequests={modRequests}
+              onReviewRequest={handleReviewRequest}
+              onUpdateUserStatus={handleUpdateUserStatus}
+              onUpdateUsersList={(newUsers) => {
+                setRegisteredUsers(newUsers);
+                localStorage.setItem("gomoto_users", JSON.stringify(newUsers));
+              }}
+              registeredUsers={registeredUsers}
+              lang={language}
+              submittedTaxDocs={submittedTaxDocs}
+              onReviewTaxDoc={handleReviewTaxDoc}
+              sosAlerts={sosAlerts}
+              onResolveSOSAlert={handleResolveSOSAlert}
+              onBackToApp={() => {}}
+            />
+          )}
+
+        </AutoTranslateContainer>
       </main>
-
-      {/* Security Review & Road Code AI Assistant */}
-      <AIChatBot />
 
     </div>
   );

@@ -413,3 +413,219 @@ export function generateAnnualTaxPDF(user: UserProfile, rides: RideRequest[], as
 
   return doc;
 }
+
+/**
+ * Generates an elegant Fleet Analytical Dashboard PDF Report
+ */
+export function generateFleetAnalyticalPDF(
+  user: UserProfile,
+  drivers: any[],
+  dailyData: { day: string; grossCDF: number; commCDF: number }[],
+  monthlyData: { month: string; grossCDF: number; commCDF: number }[]
+): jsPDF {
+  const doc = new jsPDF();
+
+  doc.setProperties({
+    title: `GoMoto RDC - Rapport Analytique de Flotte - ${user.lastName}`,
+    subject: "Analyses Financières et Performances",
+    author: "GoMoto RDC",
+    creator: "State Fleet Intelligence Engine v2.0"
+  });
+
+  const primaryColor = [15, 23, 42];   // slate-900
+  const orangeColor = [245, 158, 11];   // yellow-500 (#f59e0b)
+  const emeraldColor = [16, 185, 129]; // emerald-500 (#10b981)
+  const lightBg = [248, 250, 252];     // slate-50
+
+  // Official colors top banner
+  doc.setFillColor(30, 41, 59); // dark slate
+  doc.rect(0, 0, 140, 8, "F");
+  doc.setFillColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+  doc.rect(140, 0, 70, 8, "F");
+
+  // Logo Circle
+  doc.setFillColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+  doc.circle(25, 25, 8, "F");
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.circle(25, 25, 6, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(255, 255, 255);
+  doc.text("G", 23.5, 27.5);
+
+  // Title
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text("GOMOTO RDC • RAPPORT ANALYTIQUE", 38, 23);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(115, 115, 115);
+  doc.text("Rapport Périodique Consolidé de Performance et de Rentabilité de Flotte", 38, 28);
+  doc.text("Plateforme Technologique Autorisée par l'Hôtel de Ville de Kinshasa", 38, 32);
+
+  // Line separator
+  doc.setDrawColor(226, 232, 240);
+  doc.line(20, 38, 190, 38);
+
+  // Owner Meta Section
+  doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+  doc.rect(20, 42, 170, 34, "F");
+  doc.rect(20, 42, 170, 34, "S");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text("SYNTHÈSE DU COMPTE PROPRIÉTAIRE", 24, 48);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(`Gestionnaire : ${user.firstName} ${user.lastName}`, 24, 54);
+  doc.text(`Identifiant Enrôlement : ${user.id}`, 24, 59);
+  doc.text(`Téléphone : ${user.phone}`, 24, 64);
+  doc.text(`Adresse Enregistrée : ${formatDRCAddress(user.address)}`, 24, 69);
+
+  // Stats Counters Row
+  const totalFleetRides = drivers.reduce((sum, d) => sum + d.totalRides, 0);
+  const totalFleetGrossCDF = drivers.reduce((sum, d) => sum + d.revenueCDF, 0);
+  const totalFleetGrossUSD = drivers.reduce((sum, d) => sum + d.revenueUSD, 0);
+  const ownerTotalCommCDF = Math.round(totalFleetGrossCDF * 0.15);
+  const ownerTotalCommUSD = parseFloat((totalFleetGrossUSD * 0.15).toFixed(2));
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("INDICATEURS CLÉS DE PERFORMANCE (KPI)", 20, 84);
+
+  doc.setFillColor(241, 245, 249);
+  doc.rect(20, 88, 170, 20, "F");
+  doc.rect(20, 88, 170, 20, "S");
+
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 110, 120);
+  doc.text("MOTOS EN OPÉRATION", 24, 93);
+  doc.text("TRAJETS ACCUMULÉS", 68, 93);
+  doc.text("REVENUS BRUTS FLOTTE", 112, 93);
+  doc.text("COMMISSIONS GÉRANT (15%)", 150, 93);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text(`${drivers.length} Véhicules`, 24, 100);
+  doc.text(`${totalFleetRides} Courses`, 68, 100);
+  doc.setTextColor(emeraldColor[0], emeraldColor[1], emeraldColor[2]);
+  doc.text(`${totalFleetGrossCDF.toLocaleString("fr-FR")} CDF`, 112, 100);
+  doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+  doc.text(`${ownerTotalCommCDF.toLocaleString("fr-FR")} CDF`, 150, 100);
+
+  // Section: Driver contributions table
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("CONTRIBUTION INDIVIDUELLE DES CHAUFFEURS PARTENAIRES", 20, 117);
+
+  // Table header
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.rect(20, 121, 170, 7, "F");
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text("ID / NOM DU CHAUFFEUR", 24, 126);
+  doc.text("COURSES", 74, 126);
+  doc.text("REVENU BRUT (CDF)", 96, 126);
+  doc.text("COMMISSION PROPRIÉTAIRE (15%)", 136, 126);
+
+  let currentY = 128;
+  drivers.forEach((drv, idx) => {
+    doc.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    doc.rect(20, currentY, 170, 8, "F");
+    doc.rect(20, currentY, 170, 8, "S");
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text(drv.name, 24, currentY + 5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.text(`${drv.totalRides} courses`, 74, currentY + 5);
+    doc.text(`${drv.revenueCDF.toLocaleString("fr-FR")} CDF`, 96, currentY + 5);
+
+    doc.setFont("helvetica", "bold");
+    const comm = Math.round(drv.revenueCDF * 0.15);
+    doc.text(`${comm.toLocaleString("fr-FR")} CDF`, 136, currentY + 5);
+
+    currentY += 8;
+  });
+
+  // Section: Daily and Monthly Revenue Trends
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("HISTORIQUE DES GAINS CONSOLIDÉS DE LA SEMAINE", 20, currentY + 12);
+
+  // Draw small analytical bar chart representation or summary text list
+  // Recharts cannot be output as image directly without headless brower, so we draw a clean ASCII grid list for optimal reliability
+  doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+  doc.rect(20, currentY + 16, 170, 22, "F");
+  doc.rect(20, currentY + 16, 170, 22, "S");
+
+  doc.setFontSize(7.5);
+  let textX = 24;
+  dailyData.forEach((dayItem) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(dayItem.day, textX, currentY + 22);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${Math.round(dayItem.grossCDF / 1000)}k`, textX, currentY + 28);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+    doc.text(`${Math.round(dayItem.commCDF / 1000)}k`, textX, currentY + 33);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    textX += 23;
+  });
+
+  currentY = currentY + 45;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("REVENUS MENSUELS CONSOLIDÉS (ANNÉE EN COURS)", 20, currentY);
+
+  doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+  doc.rect(20, currentY + 4, 170, 22, "F");
+  doc.rect(20, currentY + 4, 170, 22, "S");
+
+  doc.setFontSize(7.5);
+  textX = 24;
+  monthlyData.forEach((monItem) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(monItem.month, textX, currentY + 10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${(monItem.grossCDF / 1000000).toFixed(1)}M`, textX, currentY + 16);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(orangeColor[0], orangeColor[1], orangeColor[2]);
+    doc.text(`${(monItem.commCDF / 1000000).toFixed(2)}M`, textX, currentY + 21);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    textX += 26;
+  });
+
+  // Stamp and signatures
+  doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.line(20, currentY + 38, 190, currentY + 38);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text("CERTIFICATION DE COMMISSIONS ET DE COMPTABILITÉ GOMOTO RDC", 20, currentY + 44);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(115, 115, 115);
+  doc.text("Ce bilan analytique est issu du système de calcul décentralisé synchrone avec le portefeuille.", 20, 281);
+  doc.text("Les taxes d'État et de l'Hôtel de ville sont précomptées d'après les bordereaux nationaux en vigueur.", 20, 285);
+
+  // Administrative stamp rect
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(30, 41, 59);
+  doc.rect(130, currentY + 42, 55, 18, "S");
+  doc.setFontSize(6.5);
+  doc.text("CENTRAL FLEET CONTROL RDC", 132, currentY + 47);
+  doc.text("✓ AUDITÉ & VALIDE", 143, currentY + 52);
+  doc.text(`ÉMIS : ${new Date().toLocaleDateString("fr-CD")}`, 142, currentY + 57);
+
+  return doc;
+}

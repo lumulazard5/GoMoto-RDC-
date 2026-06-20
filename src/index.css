@@ -13,7 +13,22 @@ body {
   color: #1E293B;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  overscroll-behavior-y: contain; /* Prevents typical web pull-to-refresh style bounce */
 }
+
+/* Native/App feel: remove tap highlight and prevent text selection on buttons */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, [role="button"], select, input, textarea {
+  outline: none;
+}
+
 
 h1, h2, h3, .font-display {
   font-family: var(--font-display);

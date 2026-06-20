@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { Phone, ShieldAlert, X, Flame, Activity, Compass, ExternalLink, ShieldCheck, MapPin, Radio, AlertCircle, RefreshCw } from "lucide-react";
 import { drcEmergencyNumbers } from "../data/legalTexts";
 import { SOSAlert } from "../types";
+import { db } from "../firebase";
+import { doc, setDoc, updateDoc } from "firebase/firestore";
 
 interface EmergencySOSProps {
   idPrefix?: string;
@@ -85,7 +87,7 @@ export default function EmergencySOS({ idPrefix = "sos", userProfile, onTriggerS
     }
   };
 
-  const finalizeSOSTrigger = (lat: number, lng: number, reasonText: string) => {
+  const finalizeSOSTrigger = async (lat: number, lng: number, reasonText: string) => {
     // Build user description
     let finalUserName = "Citoyen Anonyme";
     let finalUserPhone = "+243 000 000 000";
@@ -128,6 +130,12 @@ export default function EmergencySOS({ idPrefix = "sos", userProfile, onTriggerS
     setIsLocating(false);
     setTransmissionSuccess(true);
 
+    try {
+      await setDoc(doc(db, 'sos_alerts', newAlert.id), newAlert);
+    } catch (error) {
+      console.error("Firebase SOS Sync error:", error);
+    }
+
     if (onTriggerSOS) {
       onTriggerSOS(newAlert);
     } else {
@@ -141,8 +149,17 @@ export default function EmergencySOS({ idPrefix = "sos", userProfile, onTriggerS
     }
   };
 
-  const cancelGoMotoSOS = () => {
+  const cancelGoMotoSOS = async () => {
     if (activeSOS) {
+      try {
+        await updateDoc(doc(db, 'sos_alerts', activeSOS.id), {
+          status: "resolved",
+          resolutionNotes: "Alerte levée par l'auteur depuis le bouton SOS flottant."
+        });
+      } catch (error) {
+         console.error("Firebase SOS Sync error:", error);
+      }
+      
       try {
         const existing = localStorage.getItem("gomoto_sos_alerts");
         if (existing) {

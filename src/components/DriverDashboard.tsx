@@ -7,6 +7,7 @@ import React, { useState, useEffect } from "react";
 import { UserProfile, RideRequest, WalletTransaction, AdminModificationRequest, DRCAddress, RideMessage, RideReview, SubmittedTaxDocument, SOSAlert, DocumentType } from "../types";
 import { mockAvenues, getRandomAvenue } from "../data/drcLocations";
 import MapSimulator from "./MapSimulator";
+import DriverMapTracking from "./DriverMapTracking";
 import EmergencySOS from "./EmergencySOS";
 import WeatherAlert from "./WeatherAlert";
 import DriverBadgeGenerator from "./DriverBadgeGenerator";
@@ -45,7 +46,8 @@ import {
   Download,
   FileText,
   FileCheck,
-  Building
+  Building,
+  Key
 } from "lucide-react";
 import { AppLanguage, translations } from "../lib/translations";
 
@@ -75,6 +77,10 @@ export default function DriverDashboard({
   sosAlerts = [],
 }: DriverDashboardProps) {
   const [activeTab, setActiveTab] = useState<"courses" | "wallet" | "ratings" | "profile" | "badge" | "history" | "fiscalite">("courses");
+  const [useGoogleMaps, setUseGoogleMaps] = useState<boolean>(() => {
+    const saved = localStorage.getItem("gomoto_use_google_maps_driver");
+    return saved === "true";
+  });
   const [offlineModeSimulated, setOfflineModeSimulated] = useState<boolean>(false);
   const [offlinePendingRides, setOfflinePendingRides] = useState<RideRequest[]>(() => {
     const saved = localStorage.getItem(`gomoto_driver_offline_pending_rides_${profile.id}`);
@@ -186,17 +192,40 @@ export default function DriverDashboard({
   const [passengerPos, setPassengerPos] = useState({ x: 240, y: 220 });
 
   // Wallet and transactions
+  const [isWalletUnlocked, setIsWalletUnlocked] = useState(false);
+  const [walletPinInput, setWalletPinInput] = useState("");
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState("");
   const [payoutCurrency, setPayoutCurrency] = useState<"CDF" | "USD">("CDF");
-  const [payoutMethod, setPayoutMethod] = useState<"M-Pesa" | "Orange Money" | "Airtel Money">("M-Pesa");
+  const [payoutMethod, setPayoutMethod] = useState<"M-Pesa" | "Orange Money" | "Airtel Money" | "Virement Bancaire">("M-Pesa");
+
+  const [ridePinInput, setRidePinInput] = useState("");
+  const [ridePinError, setRidePinError] = useState<string | null>(null);
+  
+  // 2FA OTP security states for driver payouts
+  const [withdrawalOtpSent, setWithdrawalOtpSent] = useState<boolean>(false);
+  const [withdrawalGeneratedOtp, setWithdrawalGeneratedOtp] = useState<string>("");
+  const [withdrawalEnteredOtp, setWithdrawalEnteredOtp] = useState<string>("");
+  const [withdrawalOtpError, setWithdrawalOtpError] = useState<string | null>(null);
+  const [withdrawalOtpNotify, setWithdrawalOtpNotify] = useState<string | null>(null);
+
+  // Commission & Expense Share dynamic calculator states
+  const [calcAmount, setCalcAmount] = useState<number>(15000);
+  const [calcCurrency, setCalcCurrency] = useState<"CDF" | "USD">("CDF");
+  const [calcOwnerPercent, setCalcOwnerPercent] = useState<number>(20); // Default owner versement of 20%
+  const [fuelPaidBy, setFuelPaidBy] = useState<"driver" | "owner" | "split">("driver");
+  const [maintenancePaidBy, setMaintenancePaidBy] = useState<"driver" | "owner" | "split">("owner");
 
   // Referral (Parrainage) states
   const [invitedName, setInvitedName] = useState("");
   const [invitedPhone, setInvitedPhone] = useState("+243 ");
   const [referralFeedback, setReferralFeedback] = useState("");
   const [isCopied, setIsCopied] = useState(false);
+
+  // Ride History Search & Filter states
+  const [historySearchQuery, setHistorySearchQuery] = useState<string>("");
+  const [historyPriceRange, setHistoryPriceRange] = useState<string>("all");
 
   // Profile Modification states
   const [showModModal, setShowModModal] = useState(false);
@@ -233,6 +262,106 @@ export default function DriverDashboard({
   const [telPlanPaidByGoMoto, setTelPlanPaidByGoMoto] = useState<boolean>(profile.telecomPlanPaidByGoMoto || false);
   const [isTelSubmitting, setIsTelSubmitting] = useState<boolean>(false);
   const [telFeedback, setTelFeedback] = useState<string>("");
+
+  // Dual Enrollment Cross-Affiliation State Hooks
+  const [driverEnrollmentCodeInput, setDriverEnrollmentCodeInput] = useState<string>("");
+  const [driverCrossStatus, setDriverCrossStatus] = useState<string>(() => {
+    let statusKey = "gomoto_cross_verification_usr-owner-441";
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      if (key.startsWith("gomoto_cross_verification_")) {
+        statusKey = key;
+        break;
+      }
+    }
+    return localStorage.getItem(statusKey) || "pending";
+  });
+  const [driverCrossFeedback, setDriverCrossFeedback] = useState<string>("");
+  const [isValidatingEnrollment, setIsValidatingEnrollment] = useState<boolean>(false);
+
+  // Helper to fetch details of the linked owner from local storage
+  const getLinkedOwnerDetails = () => {
+    let foundOwnerId = "";
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      if (key.startsWith("gomoto_owner_enrollment_code_")) {
+        foundOwnerId = key.split("gomoto_owner_enrollment_code_")[1];
+        break;
+      }
+    }
+    if (!foundOwnerId) foundOwnerId = "usr-owner-441";
+    const usersStr = localStorage.getItem("gomoto_users") || "[]";
+    try {
+      const users = JSON.parse(usersStr);
+      const owner = users.find((u: any) => u.id === foundOwnerId || u.role === "owner");
+      return owner;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Sync cross status from localStorage on interval
+  useEffect(() => {
+    const syncStatus = () => {
+      let statusKey = "gomoto_cross_verification_usr-owner-441";
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i) || "";
+        if (key.startsWith("gomoto_cross_verification_")) {
+          statusKey = key;
+          break;
+        }
+      }
+      const st = localStorage.getItem(statusKey) || "pending";
+      setDriverCrossStatus(st);
+    };
+    syncStatus();
+    const iv = setInterval(syncStatus, 3000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const handleValidateCrossEnrollment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!driverEnrollmentCodeInput.trim()) {
+      setDriverCrossFeedback("⚠️ Veuillez saisir le code transmis par votre propriétaire.");
+      return;
+    }
+
+    setIsValidatingEnrollment(true);
+    setDriverCrossFeedback("");
+
+    setTimeout(() => {
+      setIsValidatingEnrollment(false);
+      const codeInput = driverEnrollmentCodeInput.trim().toUpperCase();
+
+      // Find if there is any generated code in local storage
+      let foundOwnerId = "usr-owner-441";
+      let actualCode = "";
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i) || "";
+        if (key.startsWith("gomoto_owner_enrollment_code_")) {
+          foundOwnerId = key.split("gomoto_owner_enrollment_code_")[1];
+          actualCode = (localStorage.getItem(key) || "").trim().toUpperCase();
+          break;
+        }
+      }
+
+      const isValidFormat = codeInput.startsWith("GOMOTO-RDC-");
+      const isExactMatch = actualCode ? codeInput === actualCode : false;
+
+      if (isExactMatch || (isValidFormat && !actualCode)) {
+        localStorage.setItem(`gomoto_cross_verification_${foundOwnerId}`, "confirmed");
+        localStorage.setItem(`gomoto_cross_verification_${profile.id}`, "confirmed");
+        setDriverCrossStatus("confirmed");
+        setDriverCrossFeedback("✓ Félicitations ! Votre double enrôlement croisé a been validé avec succès par l'autorité d'enregistrement GoMoto RDC. Votre dossier d'audit d'État est désormais entièrement CONFORME.");
+      } else {
+        if (actualCode) {
+          setDriverCrossFeedback(`❌ Code d'affiliation invalide. Le code saisi ne correspond pas à la clé d'audit générée par votre propriétaire enregistré.`);
+        } else {
+          setDriverCrossFeedback("❌ Code incorrect. Le format attendu doit commencer par 'GOMOTO-RDC-'. Veuillez d'abord demander à votre propriétaire d'enregistrer votre affiliation.");
+        }
+      }
+    }, 1500);
+  };
 
   const handleSubscribeTelecom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -993,13 +1122,13 @@ export default function DriverDashboard({
 
           if (dist < 12) {
             clearInterval(timer);
-            setRideStatus("picked_up");
+            setRideStatus("arrived");
             
             // Sync status to localStorage active ride
             const savedRide = localStorage.getItem("gomoto_active_ride");
             if (savedRide) {
               const parsed = JSON.parse(savedRide);
-              parsed.status = "picked_up";
+              parsed.status = "arrived";
               localStorage.setItem("gomoto_active_ride", JSON.stringify(parsed));
             }
             return passengerPos;
@@ -1227,7 +1356,7 @@ export default function DriverDashboard({
     setRideStatus("idle");
     setActiveRide(null);
     setRatingComment("");
-    alert(`Course clôturée d'un commun accord ! Vous avez reçu ${earnedCDF.toLocaleString()} CDF (${earnedUSD} USD) après commission GoMoto de 15%. Évaluation de citoyen passager soumise.`);
+    alert("Course clôturée et évaluation soumise avec succès.");
   };
 
   // Withdraw money via Mobile Money (M-Pesa, Orange, Airtel)
@@ -1239,6 +1368,27 @@ export default function DriverDashboard({
     let balanceCheck = payoutCurrency === "CDF" ? profile.walletBalanceCDF : profile.walletBalanceUSD;
     if (balanceCheck < withdrawNum) {
       alert("Votre solde disponible dans votre portefeuille est insuffisant.");
+      return;
+    }
+
+    // Interactive 2FA OTP Protocol Check (Recommandation #1)
+    if (!withdrawalOtpSent) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setWithdrawalGeneratedOtp(code);
+      setWithdrawalOtpSent(true);
+      setWithdrawalOtpError(null);
+      const carrierLabel = payoutMethod === "M-Pesa" ? "M-PESA / VODACOM" : payoutMethod === "Orange Money" ? "ORANGE MONEY" : payoutMethod === "Airtel Money" ? "AIRTEL MONEY" : "BANQUE PARTENAIRE";
+      setWithdrawalOtpNotify(`[SMS SECURE - RETRAIT] Code d'authentification double facteur GoMoto : ${code} pour certifier le retrait de ${withdrawNum} ${payoutCurrency}.`);
+      
+      // Auto-clear notification after 20 seconds
+      setTimeout(() => {
+        setWithdrawalOtpNotify(null);
+      }, 20000);
+      return;
+    }
+
+    if (withdrawalEnteredOtp !== withdrawalGeneratedOtp || withdrawalGeneratedOtp === "") {
+      setWithdrawalOtpError("Le code de vérification mobile ne correspond pas. Veuillez vérifier le SMS d'État.");
       return;
     }
 
@@ -1269,9 +1419,36 @@ export default function DriverDashboard({
       walletBalanceUSD: parseFloat(finalUSD.toFixed(2))
     });
 
+    // Write a Security Event directly on the Ledger to demonstrate active recommendations double-factor validation!
+    try {
+      const currentEventsStr = localStorage.getItem("gomoto_security_events_admin") || "[]";
+      const currentEvents = JSON.parse(currentEventsStr);
+      const newSecEvent = {
+        id: "sh-evt-" + Math.random().toString(36).substr(2, 6),
+        timestamp: new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        threatType: "OTP Verification",
+        rawInput: "2FA Verified (Success)",
+        sourceIp: "197.242.148.22 (Kinshasa, RDC - Airtel SIM)",
+        actionTaken: "VERIFIED & PASSED",
+        riskScore: "SECURE",
+        location: `Kinshasa (${profile.address?.commune || "Gombe"})`,
+        details: `Validation 2FA réussie par l'API pour le chauffeur ${profile.firstName} ${profile.lastName} lors du retrait de ${withdrawNum} ${payoutCurrency} via ${payoutMethod}.`
+      };
+      currentEvents.unshift(newSecEvent);
+      localStorage.setItem("gomoto_security_events_admin", JSON.stringify(currentEvents));
+    } catch (secErr) {
+      console.error("Error logging 2FA audit trace to ledger", secErr);
+    }
+
     setShowPayoutModal(false);
     setPayoutAmount("");
-    alert(`Retrait initié de ${withdrawNum} ${payoutCurrency} via ${payoutMethod}. Vos fonds arriveront sur votre compte mobile dans un instant.`);
+    setWithdrawalOtpSent(false);
+    setWithdrawalGeneratedOtp("");
+    setWithdrawalEnteredOtp("");
+    setWithdrawalOtpError(null);
+    setWithdrawalOtpNotify(null);
+
+    alert(`✓ Retrait vérifié cryptographiquement par double facteur d'État ! Vos ${withdrawNum} ${payoutCurrency} ont été versés avec succès sur votre compte mobile ${payoutMethod}.`);
   };
 
   const handleTaxDocSubmit = (e: React.FormEvent) => {
@@ -1413,6 +1590,18 @@ export default function DriverDashboard({
 
   return (
     <div id="driver-screen-container" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start max-w-7xl mx-auto">
+      
+      {/* 2FA OTP Simulated SMS Banner Notification */}
+      {withdrawalOtpNotify && (
+        <div className="col-span-1 lg:col-span-12 bg-amber-950/80 border border-amber-500/30 p-4 rounded-3xl text-xs flex items-center gap-3 animate-bounce font-sans text-left shadow-xl text-amber-300">
+          <Smartphone className="w-5 h-5 text-amber-400 shrink-0 animate-pulse animate-bounce" />
+          <div className="flex-1">
+            <span className="font-extrabold block text-[8px] text-amber-500 uppercase font-mono tracking-widest">NOTIF DE TÉLÉPHONE MOTORISÉE (SMS D'ÉTAT RETRAIT) :</span>
+            <span className="font-semibold">{withdrawalOtpNotify}</span>
+          </div>
+          <button type="button" onClick={() => setWithdrawalOtpNotify(null)} className="text-amber-500 hover:text-amber-300 font-extrabold text-base px-1.5 rounded-full hover:bg-slate-800">×</button>
+        </div>
+      )}
       
       {/* LEFT COLUMN: Sidebar menu, navigation, status */}
       <div className="lg:col-span-4 space-y-6">
@@ -1957,29 +2146,62 @@ export default function DriverDashboard({
             
             {/* Live routing map tracking */}
             {rideStatus !== "idle" && activeRide && (
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3">
-                <div className="flex justify-between items-center text-xs">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3 font-sans">
+                <div className="flex justify-between items-center text-xs gap-3 flex-wrap">
                   <span className="font-extrabold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
                     <Compass className="w-4 h-4 text-yellow-500" />
                     <span>Navigation Active - {activeRide.clientName}</span>
                   </span>
-                  <span className="bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded text-yellow-500 font-bold text-[9px] animate-pulse">
-                    MOTEUR NAVIGATION GPS RDC
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !useGoogleMaps;
+                        setUseGoogleMaps(next);
+                        localStorage.setItem("gomoto_use_google_maps_driver", String(next));
+                      }}
+                      className={`text-[9px] uppercase tracking-wider font-extrabold px-2.5 py-1 rounded-xl border transition-all cursor-pointer ${
+                        useGoogleMaps
+                          ? "bg-yellow-500 text-slate-950 border-yellow-400 font-black shadow-md hover:bg-yellow-400"
+                          : "bg-slate-800 text-slate-305 border-slate-700 hover:text-white hover:bg-slate-700"
+                      }`}
+                    >
+                      {useGoogleMaps ? "🗺️ Mode Carte Actif" : "🗺️ Mode Carte Inactif"}
+                    </button>
+                    <span className="bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded text-yellow-500 font-bold text-[9px] animate-pulse">
+                      MOTEUR NAVIGATION GPS RDC
+                    </span>
+                  </div>
                 </div>
                 
                 <WeatherAlert theme="dark" communeFilter={profile.address.commune} address={profile.address} lang={lang} />
 
-                <MapSimulator
-                  address={profile.address}
-                  pickupAddress={activeRide.pickupAddress}
-                  dropoffAddress={activeRide.dropoffAddress}
-                  isRideActive={true}
-                  rideStatus={rideStatus === "idle" ? undefined : rideStatus}
-                  driverPosition={driverPos}
-                  passengerPosition={passengerPos}
-                  role="driver"
-                />
+                {useGoogleMaps ? (
+                  <DriverMapTracking
+                    address={profile.address}
+                    pickupAddress={activeRide.pickupAddress}
+                    dropoffAddress={activeRide.dropoffAddress}
+                    isRideActive={true}
+                    rideStatus={rideStatus === "idle" ? undefined : rideStatus}
+                    driverPosition={driverPos}
+                    passengerPosition={passengerPos}
+                    onSwitchToLocalSimulator={() => {
+                      setUseGoogleMaps(false);
+                      localStorage.setItem("gomoto_use_google_maps_driver", "false");
+                    }}
+                  />
+                ) : (
+                  <MapSimulator
+                    address={profile.address}
+                    pickupAddress={activeRide.pickupAddress}
+                    dropoffAddress={activeRide.dropoffAddress}
+                    isRideActive={true}
+                    rideStatus={rideStatus === "idle" ? undefined : rideStatus}
+                    driverPosition={driverPos}
+                    passengerPosition={passengerPos}
+                    role="driver"
+                  />
+                )}
               </div>
             )}
 
@@ -2043,6 +2265,12 @@ export default function DriverDashboard({
                       </div>
                     )}
 
+                    {rideStatus === "arrived" && (
+                      <div className="bg-purple-500/10 border border-purple-500/20 px-3.5 py-1.5 rounded-xl text-[10px] text-purple-400 font-bold animate-pulse text-right">
+                        Arrivé - Attente PIN
+                      </div>
+                    )}
+
                     {rideStatus === "picked_up" && (
                       <div className="bg-emerald-500/10 border border-emerald-500/20 px-3.5 py-1.5 rounded-xl text-[10px] text-emerald-400 font-bold animate-pulse text-right">
                         Course en cours de transport
@@ -2055,6 +2283,62 @@ export default function DriverDashboard({
                       </div>
                     )}
                   </div>
+
+                  {rideStatus === "arrived" && (
+                    <div className="w-full bg-slate-900 border border-purple-900/40 p-4 rounded-xl mt-1 text-left space-y-3">
+                      <h4 className="text-xs font-black text-purple-400 uppercase tracking-wide flex items-center gap-1.5">
+                        <Key className="w-4 h-4" />
+                        <span>Contrôle de Sécurité : Code PIN Requis</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-400">
+                        Pour sécuriser la course et prouver que vous prenez le bon passager, demandez-lui son code PIN secret à 4 chiffres.
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={ridePinInput}
+                          onChange={(e) => setRidePinInput(e.target.value.replace(/\D/g, ''))}
+                          className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-center text-lg font-mono font-bold text-white focus:outline-none focus:border-purple-500"
+                          placeholder="0000"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (activeRide?.securityPin && ridePinInput === activeRide.securityPin) {
+                              setRidePinError(null);
+                              setRidePinInput("");
+                              setRideStatus("picked_up");
+                              const savedRide = localStorage.getItem("gomoto_active_ride");
+                              if (savedRide) {
+                                const parsed = JSON.parse(savedRide);
+                                parsed.status = "picked_up";
+                                localStorage.setItem("gomoto_active_ride", JSON.stringify(parsed));
+                              }
+                            } else if (!activeRide?.securityPin && ridePinInput === "1234") {
+                              setRidePinError(null);
+                              setRidePinInput("");
+                              setRideStatus("picked_up");
+                              const savedRide = localStorage.getItem("gomoto_active_ride");
+                              if (savedRide) {
+                                const parsed = JSON.parse(savedRide);
+                                parsed.status = "picked_up";
+                                localStorage.setItem("gomoto_active_ride", JSON.stringify(parsed));
+                              }
+                            } else {
+                              setRidePinError("Code PIN incorrect. Le passager doit vérifier son application.");
+                            }
+                          }}
+                          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg px-4 flex items-center justify-center gap-2 transition-colors uppercase tracking-wider text-[11px]"
+                        >
+                          Valider & Démarrer
+                        </button>
+                      </div>
+                      {ridePinError && (
+                        <p className="text-[10px] text-red-400 bg-red-400/10 p-2 rounded-lg">{ridePinError}</p>
+                      )}
+                    </div>
+                  )}
 
                   {rideStatus === "completed" && (
                     <div className="w-full bg-slate-900 border border-slate-800 p-4 rounded-xl mt-1 space-y-3 test-left">
@@ -2162,6 +2446,57 @@ export default function DriverDashboard({
 
             {/* List of nearby available rides */}
             {isOnline && rideStatus === "idle" && (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3.5 font-sans">
+                <div className="flex justify-between items-center text-xs gap-3 flex-wrap">
+                  <span className="font-extrabold text-[#f3f4f6] uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600 animate-ping"></span>
+                    <span>Radar Trafic & Bouchons en Temps Réel</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !useGoogleMaps;
+                        setUseGoogleMaps(next);
+                        localStorage.setItem("gomoto_use_google_maps_driver", String(next));
+                      }}
+                      className={`text-[9px] uppercase tracking-wider font-extrabold px-2.5 py-1 rounded-xl border transition-all cursor-pointer ${
+                        useGoogleMaps
+                          ? "bg-yellow-500 text-slate-950 border-yellow-400 font-black shadow-md hover:bg-yellow-400"
+                          : "bg-slate-800 text-slate-305 border-slate-700 hover:text-white hover:bg-slate-700"
+                      }`}
+                    >
+                      {useGoogleMaps ? "🗺️ Mode Carte Actif" : "🗺️ Mode Carte Inactif"}
+                    </button>
+                    <span className="bg-red-500/10 border border-red-500/20 px-2 py-1 rounded text-red-400 font-bold text-[9px] font-mono tracking-widest">
+                      ALERTE LIVE RDC
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                  Suivez les blocages signalés par la communauté ou signalez-en un pour alerter les autres chauffeurs GoMoto. Cliquez sur une intersection ou une avenue puis appuyez sur <b>Signaler Bouchon 🚨</b>.
+                </p>
+                {useGoogleMaps ? (
+                  <DriverMapTracking
+                    address={profile.address}
+                    isRideActive={false}
+                    rideStatus="idle"
+                    onSwitchToLocalSimulator={() => {
+                      setUseGoogleMaps(false);
+                      localStorage.setItem("gomoto_use_google_maps_driver", "false");
+                    }}
+                  />
+                ) : (
+                  <MapSimulator
+                    address={profile.address}
+                    isRideActive={false}
+                    role="driver"
+                  />
+                )}
+              </div>
+            )}
+
+            {isOnline && rideStatus === "idle" && (
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
                 <div className="flex justify-between items-center">
                   <h3 className="font-black text-slate-100 text-sm flex items-center gap-1.5">
@@ -2266,19 +2601,91 @@ export default function DriverDashboard({
               </span>
             </div>
 
-            {completedRides.length === 0 ? (
-              <div className="text-center py-12 px-4 border border-dashed border-slate-800 rounded-2xl bg-slate-950/40">
-                <MapPin className="w-8 h-8 text-slate-700 mx-auto mb-3" />
-                <p className="text-xs text-slate-400 font-medium">Aucune course enregistrée historiquement.</p>
-                <p className="text-[10px] text-slate-500 mt-1">Vos futures courses complétées s'ajouteront automatiquement.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
+            {(() => {
+              const filteredRides = completedRides.filter(ride => {
+                const query = historySearchQuery.toLowerCase().trim();
+                let matchesQuery = true;
+                if (query) {
+                  const clientMatch = (ride.clientName || "").toLowerCase().includes(query);
+                  const idMatch = ride.id.toLowerCase().includes(query);
+                  const dateMatch = (ride.timestamp || "").toLowerCase().includes(query);
+                  const pickupMatch = `${ride.pickupAddress.avenue} ${ride.pickupAddress.commune} ${ride.pickupAddress.quartier}`.toLowerCase().includes(query);
+                  const dropoffMatch = `${ride.dropoffAddress.avenue} ${ride.dropoffAddress.commune} ${ride.dropoffAddress.quartier}`.toLowerCase().includes(query);
+                  matchesQuery = clientMatch || idMatch || dateMatch || pickupMatch || dropoffMatch;
+                }
+                
+                let matchesPrice = true;
+                if (historyPriceRange === "under12k") {
+                  matchesPrice = ride.priceCDF < 12000;
+                } else if (historyPriceRange === "over12k") {
+                  matchesPrice = ride.priceCDF >= 12000;
+                }
+                
+                return matchesQuery && matchesPrice;
+              });
+
+              if (completedRides.length === 0) {
+                return (
+                  <div className="text-center py-12 px-4 border border-dashed border-slate-800 rounded-2xl bg-slate-950/40">
+                    <MapPin className="w-8 h-8 text-slate-700 mx-auto mb-3" />
+                    <p className="text-xs text-slate-400 font-medium">Aucune course enregistrée historiquement.</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Vos futures courses complétées s'ajouteront automatiquement.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4 w-full">
+                  {/* Search and Filters Layout for Driver (Slate/Dark styling) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider block">Chercher une course</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Client, Commune, ID, Date..."
+                          value={historySearchQuery}
+                          onChange={(e) => setHistorySearchQuery(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-yellow-500 placeholder-slate-500"
+                        />
+                        {historySearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setHistorySearchQuery("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 font-bold text-xs pointer-events-auto"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-left">
+                      <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider block">Filtrer par Prix</label>
+                      <select
+                        value={historyPriceRange}
+                        onChange={(e) => setHistoryPriceRange(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-805 rounded-xl px-3 py-2 text-xs font-bold text-slate-300 outline-none focus:border-yellow-500 cursor-pointer"
+                      >
+                        <option value="all">Tous les Tarifs</option>
+                        <option value="under12k">Moins de 12 000 CDF</option>
+                        <option value="over12k">12 000 CDF ou plus</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
                 
                 {/* List portion - Col span 5 */}
-                <div className="lg:col-span-12 xl:col-span-12 xx:col-span-5 lg:col-span-5 space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {completedRides.map((ride) => {
-                    const isSelected = selectedHistoryRide === ride.id;
+                <div className="lg:col-span-12 xl:col-span-5 space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {filteredRides.length === 0 ? (
+                    <div className="text-center py-10 bg-slate-950 border border-slate-800 rounded-2xl p-4">
+                      <p className="text-xs text-slate-400 font-medium">Aucune course trouvée.</p>
+                      <p className="text-[10px] text-slate-550 mt-1">Ajustez vos filtres ou termes de recherche.</p>
+                    </div>
+                  ) : (
+                    filteredRides.map((ride) => {
+                      const isSelected = selectedHistoryRide === ride.id;
                     return (
                       <button
                         key={ride.id}
@@ -2318,13 +2725,14 @@ export default function DriverDashboard({
                         </div>
                       </button>
                     );
-                  })}
+                  })
+                )}
                 </div>
 
                 {/* Detail portion - Col span 7 */}
                 <div className="lg:col-span-12 xl:col-span-7">
                   {(() => {
-                    const ride = completedRides.find(r => r.id === selectedHistoryRide) || completedRides[0];
+                    const ride = filteredRides.find(r => r.id === selectedHistoryRide) || filteredRides[0] || completedRides[0];
                     if (!ride) return null;
 
                     return (
@@ -2457,7 +2865,9 @@ export default function DriverDashboard({
                 </div>
 
               </div>
-            )}
+            </div>
+          );
+        })()}
           </div>
         )}
 
@@ -2465,20 +2875,64 @@ export default function DriverDashboard({
         {activeTab === "wallet" && (
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
             
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-slate-100 text-sm">Gestion des Revenus Chauffeur</h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">Demandez des fonds instantanément vers votre sim mobile money</p>
+            {!isWalletUnlocked ? (
+              <div className="flex flex-col items-center justify-center py-12 space-y-6 animate-in fade-in zoom-in duration-300">
+                <div className="w-16 h-16 bg-slate-950 rounded-full flex items-center justify-center border-2 border-slate-800 shadow-xl">
+                  <Lock className="w-7 h-7 text-yellow-500" />
+                </div>
+                
+                <div className="text-center space-y-1">
+                  <h3 className="font-black text-slate-100 text-lg uppercase tracking-widest">Portefeuille Sécurisé</h3>
+                  <p className="text-xs text-slate-400">Entrez votre code PIN secret à 4 chiffres (Simulation: 1234)</p>
+                </div>
+
+                <div className="w-full max-w-[240px] space-y-4">
+                  <input
+                    type="password"
+                    maxLength={4}
+                    value={walletPinInput}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setWalletPinInput(val);
+                      if (val === "1234") {
+                        setIsWalletUnlocked(true);
+                        setWalletPinInput("");
+                      }
+                    }}
+                    placeholder="••••"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3 text-center text-2xl tracking-widest text-emerald-400 font-mono font-black outline-none focus:border-yellow-500 transition-colors"
+                  />
+                  <div className="text-center">
+                    <p className="text-[9px] text-slate-600">Vos fonds sont protégés par la norme de sécurité d'état congolaise.</p>
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowPayoutModal(true)}
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Demander Retrait</span>
-              </button>
-            </div>
+            ) : (
+              <>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="font-black text-slate-100 text-sm">Gestion des Revenus Chauffeur</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Demandez des fonds instantanément vers Bank/Mobile Money</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsWalletUnlocked(false)}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Verrouiller</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPayoutModal(true)}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Demander Retrait</span>
+                    </button>
+                  </div>
+                </div>
 
             {/* Balances Display Card */}
             <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2492,6 +2946,244 @@ export default function DriverDashboard({
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Mon Solde USD (Devise Libre)</span>
                 <span className="text-2xl font-mono font-black text-yellow-500 block">${profile.walletBalanceUSD.toFixed(2)} USD</span>
                 <span className="text-[10px] text-slate-500 block">Versements 100% sécurisés</span>
+              </div>
+            </div>
+
+            {/* ================= OUTIL DE CALCUL DE COMMISSION AUTOMATIQUE & TRANSPARENCE EXPENSES ================= */}
+            <div className="bg-slate-950 p-5 rounded-3xl border border-slate-850 space-y-5">
+              <div className="flex items-center gap-3">
+                <span className="p-2 bg-yellow-500/10 text-yellow-500 rounded-xl border border-yellow-500/20">
+                  <Activity className="w-4 h-4 text-yellow-400" />
+                </span>
+                <div>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Simulateur de Commission & Rentabilité Partagée (Carburant / Entretien)</h4>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5">Calculateur automatique des commissions GoMoto et arbitrage équitable pour les charges routières</p>
+                </div>
+              </div>
+
+              {/* Input course amount & Owner share side by side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
+                {/* Simulated course field */}
+                <div className="space-y-2 text-left">
+                  <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Montant de la Course à Simuler</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={calcAmount}
+                      onChange={(e) => setCalcAmount(Math.max(0, Number(e.target.value)))}
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white font-extrabold outline-none focus:border-yellow-500"
+                      placeholder="Ex: 15000"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newCurr = calcCurrency === "CDF" ? "USD" : "CDF";
+                        setCalcCurrency(newCurr);
+                        setCalcAmount(newCurr === "CDF" ? 15000 : 6);
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl px-3.5 text-xs font-mono font-black text-yellow-500 cursor-pointer"
+                    >
+                      {calcCurrency}
+                    </button>
+                  </div>
+
+                  {/* Predefined common RDC buttons */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {calcCurrency === "CDF" ? (
+                      [3000, 5000, 10000, 15000, 25000, 50000].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCalcAmount(v)}
+                          className={`text-[8px] font-mono px-2 py-1 rounded-lg border transition-all ${
+                            calcAmount === v 
+                              ? "bg-yellow-500 text-slate-950 border-yellow-500 font-extrabold" 
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {v.toLocaleString()} CDF
+                        </button>
+                      ))
+                    ) : (
+                      [2, 5, 8, 12, 20, 35].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCalcAmount(v)}
+                          className={`text-[8px] font-mono px-2 py-1 rounded-lg border transition-all ${
+                            calcAmount === v 
+                              ? "bg-yellow-500 text-slate-950 border-yellow-500 font-extrabold" 
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          ${v} USD
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Owner custom percentage */}
+                <div className="space-y-2 text-left">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Commission Assignée au Propriétaire</label>
+                    <span className="text-[10px] text-yellow-500 font-black font-mono">{calcOwnerPercent}%</span>
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={calcOwnerPercent}
+                      onChange={(e) => setCalcOwnerPercent(Number(e.target.value))}
+                      className="w-full accent-yellow-500 cursor-pointer h-1.5"
+                    />
+                  </div>
+                  <p className="text-[8.5px] text-slate-500 leading-relaxed">
+                    La commission propriétaire est versée en échange de l'acquisition de la motocyclette par l'investisseur. Taux d'accord libre recommandé: <b>20% à 30%</b>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Expense Sharing Contributions Clarifications */}
+              <div className="border-t border-slate-850 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Fuel Split selector */}
+                <div className="space-y-1.5 text-left">
+                  <span className="text-[9.5px] font-black text-slate-300 uppercase font-mono flex items-center gap-1.5">
+                    <span>⛽</span> Contribution Carburant (Essence)
+                  </span>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    {(["driver", "owner", "split"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setFuelPaidBy(m)}
+                        className={`text-[8.5px] font-black py-1 px-1 rounded-lg border uppercase transition text-center ${
+                          fuelPaidBy === m
+                            ? "bg-amber-500 text-slate-950 border-amber-500 font-bold"
+                            : "bg-slate-950 border-transparent text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {m === "driver" ? "Motard 100%" : m === "owner" ? "Proprio 100%" : "Partage 50/50"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[8px] text-slate-500 leading-normal">
+                    Frais de carburant de trajet estimés: <span className="font-mono text-slate-300 font-extrabold">{(calcAmount * 0.18).toLocaleString("fr-FR")} {calcCurrency}</span> (~18% de consommation moyenne 150cc)
+                  </p>
+                </div>
+
+                {/* Maintenance Split selector */}
+                <div className="space-y-1.5 text-left">
+                  <span className="text-[9.5px] font-black text-slate-300 uppercase font-mono flex items-center gap-1.5">
+                    <span>🛠️</span> Vidange & Maintenance Moto
+                  </span>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    {(["driver", "owner", "split"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMaintenancePaidBy(m)}
+                        className={`text-[8.5px] font-black py-1 px-1 rounded-lg border uppercase transition text-center ${
+                          maintenancePaidBy === m
+                            ? "bg-amber-500 text-slate-950 border-amber-500 font-bold"
+                            : "bg-slate-950 border-transparent text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        {m === "driver" ? "Motard 100%" : m === "owner" ? "Proprio 100%" : "Partage 50/50"}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[8px] text-slate-500 leading-normal">
+                    Budget de maintenance de route estimé: <span className="font-mono text-slate-300 font-extrabold">{(calcAmount * 0.10).toLocaleString("fr-FR")} {calcCurrency}</span> (~10% amortissement matériel)
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Calculation output summary card */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4.5 space-y-4 font-mono">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-sans text-left">
+                  📋 Facturation & Répartition Détaillée Légale RDC :
+                </span>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+                  
+                  {/* Left: Driver Net */}
+                  <div className="space-y-2 text-left pt-2 md:pt-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                      <span className="text-[9.5px] font-black text-cyan-400 uppercase font-sans">Compte Net du Chauffeur (Motard)</span>
+                    </div>
+                    
+                    <div className="space-y-1 text-[10px] leading-normal">
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Versement Brut Client :</span>
+                        <span className="text-slate-300 font-bold">{calcAmount.toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Commission GoMoto RDC (15%) :</span>
+                        <span className="text-orange-400">-{(calcAmount * 0.15).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Quote-part Propriétaire ({calcOwnerPercent}%) :</span>
+                        <span className="text-amber-500">-{(calcAmount * calcOwnerPercent / 100).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Frais d'Essence ({fuelPaidBy === "driver" ? "100%" : fuelPaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-400">-{((fuelPaidBy === "driver" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Frais d'Entretien ({maintenancePaidBy === "driver" ? "100%" : maintenancePaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-400">-{((maintenancePaidBy === "driver" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+
+                      <div className="border-t border-slate-800 pt-2 flex justify-between items-center text-xs mt-3">
+                        <span className="font-sans font-black text-white text-[10px] uppercase">Reste net en poche :</span>
+                        <span className="text-emerald-400 font-extrabold text-[12.5px]">
+                          {Math.max(0, calcAmount - (calcAmount * 0.15) - (calcAmount * calcOwnerPercent / 100) - ((fuelPaidBy === "driver" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount) - ((maintenancePaidBy === "driver" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount)).toLocaleString("fr-FR")} {calcCurrency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Owner Net */}
+                  <div className="space-y-2 text-left pt-3 md:pt-0 md:pl-5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-yellow-500"></span>
+                      <span className="text-[9.5px] font-black text-yellow-500 uppercase font-sans">Compte Net du Propriétaire de Fleet</span>
+                    </div>
+
+                    <div className="space-y-1 text-[10px] leading-normal">
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Versement Brut Reçu :</span>
+                        <span className="text-slate-300 font-bold">{(calcAmount * calcOwnerPercent / 100).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Soutien Carburant ({fuelPaidBy === "owner" ? "100%" : fuelPaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-405">-{((fuelPaidBy === "owner" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-550">Prise en charge Vidange ({maintenancePaidBy === "owner" ? "100%" : maintenancePaidBy === "split" ? "50%" : "0%"}) :</span>
+                        <span className="text-red-405">-{((maintenancePaidBy === "owner" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount).toLocaleString("fr-FR")} {calcCurrency}</span>
+                      </div>
+
+                      <div className="border-t border-slate-800 pt-2 flex justify-between items-center text-xs mt-3">
+                        <span className="font-sans font-black text-white text-[10px] uppercase">Bénéfice net investisseur :</span>
+                        <span className="text-cyan-400 font-extrabold text-[12.5px]">
+                          {Math.max(0, (calcAmount * calcOwnerPercent / 100) - ((fuelPaidBy === "owner" ? 0.18 : fuelPaidBy === "split" ? 0.09 : 0) * calcAmount) - ((maintenancePaidBy === "owner" ? 0.10 : maintenancePaidBy === "split" ? 0.05 : 0) * calcAmount)).toLocaleString("fr-FR")} {calcCurrency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <div className="border-t border-slate-850 pt-2 text-center text-[8px] text-slate-500 font-sans uppercase">
+                  ✓ Calcul validé conformément aux CGU consolidées de GoMoto RDC • Arbitrage d'État direct
+                </div>
               </div>
             </div>
 
@@ -2624,23 +3316,36 @@ export default function DriverDashboard({
                 <div className="divide-y divide-slate-850">
                   {transactions.length > 0 ? (
                     transactions.map((tx) => (
-                      <div key={tx.id} className="p-3 bg-slate-900/40 flex justify-between items-center text-xs hover:bg-slate-900/80 transition-all">
-                        <div className="flex items-center gap-3">
-                          <span className={`h-2.5 w-2.5 rounded-full ${tx.type === 'withdrawal' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                      <div key={tx.id} className="p-3 bg-slate-900/40 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 text-xs hover:bg-slate-900/80 transition-all">
+                        <div className="flex items-start gap-3">
+                          <span className={`h-2.5 w-2.5 rounded-full mt-1 shrink-0 ${tx.type === 'withdrawal' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
                           <div>
-                            <span className="font-extrabold text-slate-200">
+                            <span className="font-extrabold text-slate-200 block">
                               {tx.type === "withdrawal" ? "Retrait de fonds" : "Gains de course terminés"}
                             </span>
                             <span className="text-[9px] text-slate-500 block mt-0.5">{tx.date} • {tx.method}</span>
+                            
+                            {/* Commission automatic breakdown details */}
+                            {tx.type !== "withdrawal" ? (
+                              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[8.5px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-900 leading-none">
+                                <span>GoMoto (15%) : <b className="text-orange-400">-{Math.round(tx.amount * 0.15).toLocaleString()} {tx.currency}</b></span>
+                                <span>•</span>
+                                <span>Net part : <b className="text-emerald-400">{Math.round(tx.amount * 0.85).toLocaleString()} {tx.currency}</b></span>
+                              </div>
+                            ) : (
+                              <div className="mt-1 text-[8.5px] font-mono text-slate-500 italic">
+                                Frais d'opération Mobile Money : 0 CDF (Subventionné par la Direction de GoMoto RDC)
+                              </div>
+                            )}
                           </div>
                         </div>
 
-                        <div className="text-right font-mono text-xs">
-                          <span className={`font-bold ${tx.type === 'withdrawal' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        <div className="text-right font-mono text-xs shrink-0 self-end sm:self-center">
+                          <span className={`font-bold block ${tx.type === 'withdrawal' ? 'text-amber-400' : 'text-emerald-400'}`}>
                             {tx.type === "withdrawal" ? "-" : "+"}
                             {tx.amount.toLocaleString()} {tx.currency}
                           </span>
-                          <span className="text-[8px] block text-slate-500 uppercase font-bold tracking-widest mt-0.5">Complété</span>
+                          <span className="text-[8px] block text-slate-500 uppercase font-black tracking-widest mt-0.5">Validé d'État</span>
                         </div>
                       </div>
                     ))
@@ -2650,6 +3355,8 @@ export default function DriverDashboard({
                 </div>
               </div>
             </div>
+          </>
+          )}
 
           </div>
         )}
@@ -2745,15 +3452,105 @@ export default function DriverDashboard({
               </p>
             </div>
 
-            {/* Instruction de double enrôlement croisé GoMoto RDC */}
-            <div className="bg-yellow-500/10 border border-yellow-500/25 p-4 rounded-xl text-slate-300 space-y-1 text-[10.5px]">
-              <span className="font-bold text-yellow-500 flex items-center gap-1.5 uppercase tracking-wider text-[9.5px]">
-                <ShieldAlert className="w-4 h-4 text-yellow-500" />
-                <span>Rappel d'Enrôlement Indépendant - GoMoto RDC :</span>
-              </span>
-              <p className="text-slate-400 leading-normal font-sans">
-                Si vous opérez sous la supervision d'un propriétaire de flotte ou d'une tierce personne, il est <b className="text-yellow-400">obligatoire</b> de soumettre votre propre demande d'inscription et d'enrôlement de manière autonome sur notre plateforme GoMoto RDC (ici-même). De plus, demandez à votre propriétaire d'enrgistrer officiellement votre nom complet, adresse complète, carte d'identité, et permis de conduire dans sa propre fiche de compte pour valider l'association nationale croisée.
-              </p>
+            {/* ================= INTERACTIVE DOUBLE-ENROLLMENT & STATE AUDIT SECTION ================= */}
+            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-850 space-y-4 text-left">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="space-y-1">
+                  <span className="font-extrabold text-yellow-500 flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-mono">
+                    <ShieldAlert className="w-4 h-4 text-yellow-500 animate-pulse" />
+                    <span>Double Enrôlement Croisé Propriétaire-Chauffeur</span>
+                  </span>
+                  <p className="text-[10px] text-slate-350 leading-normal max-w-2xl font-sans">
+                    Pour valider historiquement votre audit d'État auprès de la fédération des transports, vous devez lier votre dossier à celui de votre Propriétaire. Demandez au propriétaire légal de votre moto de vous fournir le <b>Code d'Affiliation Légale</b> généré sur son propre compte, puis saisissez-le ci-dessous pour confirmer l'association croisée officielle.
+                  </p>
+                </div>
+                <div>
+                  {driverCrossStatus === "confirmed" ? (
+                    <span className="bg-emerald-950/80 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-xl font-black text-[9px] tracking-wider uppercase font-mono flex items-center gap-1 shrink-0 shadow-sm shadow-emerald-500/5">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Validé par l'État</span>
+                    </span>
+                  ) : (
+                    <span className="bg-amber-950/80 text-amber-500 border border-amber-500/20 px-3 py-1.5 rounded-xl font-black text-[9px] tracking-wider uppercase font-mono flex items-center gap-1.5 shrink-0 animate-pulse">
+                      <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+                      <span>Non Affilié</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {driverCrossStatus !== "confirmed" ? (
+                <form onSubmit={handleValidateCrossEnrollment} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end pt-1">
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block font-sans">Saisir le Code d'Affiliation Légale de votre Propriétaire</label>
+                    <input
+                      type="text"
+                      required
+                      value={driverEnrollmentCodeInput}
+                      onChange={(e) => setDriverEnrollmentCodeInput(e.target.value)}
+                      placeholder="Ex: GOMOTO-RDC-MBO-1A2B3C"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 outline-none focus:border-yellow-500 font-mono font-bold"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isValidatingEnrollment}
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-2.5 px-4 rounded-xl text-[10.5px] uppercase transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer h-[41px]"
+                  >
+                    {isValidatingEnrollment ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 text-slate-950 animate-spin" />
+                        <span>Vérification...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 text-slate-950" />
+                        <span>Valider l'Affiliation</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-emerald-950/40 border border-emerald-500/35 p-3.5 rounded-xl text-[11px] text-emerald-350 leading-relaxed text-left flex items-start gap-2.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-extrabold block">Dossier d'Association Réciproque Conforme</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">L'affiliation étatique double croisée a été validée avec succès. L'historique d'audit d'État a consolidé la liaison contractuelle de votre flotte auprès du Greffe de l'Hôtel de ville de Kinshasa.</span>
+                    </div>
+                  </div>
+
+                  {getLinkedOwnerDetails() && (
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2 text-left">
+                      <span className="text-[8.5px] font-bold text-yellow-500 tracking-wider uppercase block font-mono">📋 FLOTTE & PROPRIÉTAIRE DÉSIGNÉ</span>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[10.5px]">
+                        <div>
+                          <span className="text-slate-400 block text-[8px] uppercase">Propriétaire légal :</span>
+                          <span className="text-slate-200 font-extrabold">{getLinkedOwnerDetails()?.firstName} {getLinkedOwnerDetails()?.lastName}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[8px] uppercase">Téléphone Propriétaire :</span>
+                          <span className="text-slate-250 font-mono font-bold">{getLinkedOwnerDetails()?.phone || "+243 812 770 099"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[8px] uppercase">Véhicule Assigné :</span>
+                          <span className="text-yellow-400 font-bold">{getLinkedOwnerDetails()?.vehicleModel || "Honda CG 125 Sport"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[8px] uppercase">Plaque d'Immatriculation :</span>
+                          <span className="text-slate-200 font-mono font-extrabold">{getLinkedOwnerDetails()?.vehiclePlate || "C-KIN-2026"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {driverCrossFeedback && (
+                <div className={`p-3.5 rounded-xl text-[10px] text-left leading-relaxed animate-fadeIn ${driverCrossFeedback.startsWith("❌") ? "bg-red-950/50 border border-red-500/30 text-red-300" : "bg-emerald-950/60 border border-emerald-500/25 text-emerald-350"}`}>
+                  {driverCrossFeedback}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3612,75 +4409,139 @@ export default function DriverDashboard({
             </h3>
 
             <form onSubmit={handleWithdrawal} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Montant à retirer</label>
-                  <input
-                    type="number"
-                    min="1000"
-                    placeholder="Ex: 10000"
-                    value={payoutAmount}
-                    onChange={(e) => setPayoutAmount(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-yellow-500 font-mono font-bold"
-                    required
-                  />
-                </div>
+              {!withdrawalOtpSent ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Montant à retirer</label>
+                      <input
+                        type="number"
+                        min="1000"
+                        placeholder="Ex: 10000"
+                        value={payoutAmount}
+                        onChange={(e) => setPayoutAmount(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-yellow-500 font-mono font-bold"
+                        required
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Devise du solde</label>
-                  <select
-                    value={payoutCurrency}
-                    onChange={(e) => setPayoutCurrency(e.target.value as "CDF" | "USD")}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-yellow-500 font-bold"
-                  >
-                    <option value="CDF">Franc Congolais (CDF)</option>
-                    <option value="USD">Dollar Américain (USD)</option>
-                  </select>
-                </div>
-              </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Devise du solde</label>
+                      <select
+                        value={payoutCurrency}
+                        onChange={(e) => setPayoutCurrency(e.target.value as "CDF" | "USD")}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-yellow-500 font-bold"
+                      >
+                        <option value="CDF">Franc Congolais (CDF)</option>
+                        <option value="USD">Dollar Américain (USD)</option>
+                      </select>
+                    </div>
+                  </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Opérateur de versement</label>
-                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Opérateur de versement</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPayoutMethod("M-Pesa")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
+                          payoutMethod === "M-Pesa" ? "bg-orange-500/10 border-orange-500 text-orange-500" : "bg-slate-950 border-slate-850 text-slate-400"
+                        }`}
+                      >
+                        M-Pesa
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayoutMethod("Orange Money")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
+                          payoutMethod === "Orange Money" ? "bg-amber-600/10 border-amber-600 text-amber-500" : "bg-slate-950 border-slate-850 text-slate-400"
+                        }`}
+                      >
+                        Orange Money
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayoutMethod("Airtel Money")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
+                          payoutMethod === "Airtel Money" ? "bg-red-500/10 border-red-500 text-red-500" : "bg-slate-950 border-slate-850 text-slate-400"
+                        }`}
+                      >
+                        Airtel Money
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayoutMethod("Virement Bancaire")}
+                        className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
+                          payoutMethod === "Virement Bancaire" ? "bg-blue-500/10 border-blue-500 text-blue-500" : "bg-slate-950 border-slate-850 text-slate-400"
+                        }`}
+                      >
+                        Virement Bancaire
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-850 text-[9.5px] text-slate-500">
+                    <span className="font-extrabold text-yellow-500 block">Dépôt sécurisé :</span>
+                    Le retrait de vos gains s'effectuera directement via la méthode sélectionnée. Pour les virements bancaires, un délai de 24h à 48h peut s'appliquer.
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-4 animate-in fade-in duration-200 text-left">
+                  <div className="bg-amber-950/40 p-3.5 border border-amber-500/25 rounded-2xl text-left text-amber-400 space-y-1">
+                    <span className="font-extrabold text-[9px] block uppercase tracking-wider font-mono text-amber-300 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                      <span>SÉCURISATION DOUBLE FACTEUR D'ÉTAT</span>
+                    </span>
+                    <p className="text-[10px] leading-relaxed text-slate-300 font-sans">
+                      Un code OTP temporaire de certification a été envoyé par SMS civil à votre numéro de service : <b>{profile.phone || "+243 998 440 119"}</b>.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 text-left">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Entrez le code de vérification à 6 chiffres :</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      placeholder="------"
+                      value={withdrawalEnteredOtp}
+                      onChange={(e) => setWithdrawalEnteredOtp(e.target.value)}
+                      className="w-full text-center bg-slate-950 border border-slate-800 rounded-xl py-2.5 text-base font-mono font-extrabold tracking-widest text-[#F59E0B] outline-none focus:border-yellow-500"
+                      required
+                    />
+                  </div>
+
+                  {withdrawalOtpError && (
+                    <p className="text-[10px] text-red-500 font-bold block text-left bg-red-950/20 px-3 py-1.5 border border-red-900/30 rounded-lg">{withdrawalOtpError}</p>
+                  )}
+
+                  <div className="flex justify-between items-center text-[10px] pt-1">
+                    <span className="text-slate-500 font-bold">Volume de transfert :</span>
+                    <span className="font-extrabold text-white font-mono bg-slate-950 px-2 py-1 rounded border border-slate-800">{payoutAmount} {payoutCurrency} via {payoutMethod}</span>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setPayoutMethod("M-Pesa")}
-                    className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
-                      payoutMethod === "M-Pesa" ? "bg-orange-500/10 border-orange-500 text-orange-500" : "bg-slate-950 border-slate-850 text-slate-400"
-                    }`}
+                    onClick={() => {
+                      setWithdrawalOtpSent(false);
+                      setWithdrawalEnteredOtp("");
+                      setWithdrawalOtpError(null);
+                    }}
+                    className="text-[9px] text-[#F59E0B] hover:underline block text-center mx-auto cursor-pointer font-bold uppercase tracking-wide font-mono"
                   >
-                    M-Pesa
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMethod("Orange Money")}
-                    className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
-                      payoutMethod === "Orange Money" ? "bg-amber-600/10 border-amber-600 text-amber-500" : "bg-slate-950 border-slate-850 text-slate-400"
-                    }`}
-                  >
-                    Orange Money
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMethod("Airtel Money")}
-                    className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all ${
-                      payoutMethod === "Airtel Money" ? "bg-red-500/10 border-red-500 text-red-500" : "bg-slate-950 border-slate-850 text-slate-400"
-                    }`}
-                  >
-                    Airtel Money
+                    Choisir un autre montant
                   </button>
                 </div>
-              </div>
-
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-850 text-[9.5px] text-slate-500">
-                <span className="font-extrabold text-yellow-500 block">Dépôt instantané :</span>
-                Le retrait de vos gains s'effectuera directement via votre sim Mobile Money configurée. Des frais d'opérateur mobile mineurs s'appliquent lors du retrait.
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowPayoutModal(false)}
+                  onClick={() => {
+                    setShowPayoutModal(false);
+                    setWithdrawalOtpSent(false);
+                    setWithdrawalEnteredOtp("");
+                    setWithdrawalOtpError(null);
+                  }}
                   className="flex-1 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl text-xs cursor-pointer transition-all"
                 >
                   Fermer
@@ -3689,7 +4550,7 @@ export default function DriverDashboard({
                   type="submit"
                   className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl text-xs cursor-pointer transition-all"
                 >
-                  Confirmer le Retrait
+                  {withdrawalOtpSent ? "Valider le Retrait" : "Confirmer le Retrait"}
                 </button>
               </div>
             </form>

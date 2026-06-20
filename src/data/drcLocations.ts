@@ -134,7 +134,12 @@ export const mockQuartiersByCommune: Record<string, string[]> = {
   "Kamalondo": ["Kamalondo Est", "Kamalondo Ouest"],
   "Kenia": ["Kenia I", "Kenia II", "Kenia III"],
   "Dilala": ["Biashara", "Joli Site", "Mutoshi", "Mualaba"],
-  "Manika": ["Kasulo", "Kando", "Luilu", "Kamanyola"]
+  "Manika": ["Kasulo", "Kando", "Luilu", "Kamanyola"],
+  "Kananga": ["Plateau", "Malandji", "Kambote", "Kele-Kele", "Centre-Ville", "Tshinsambi"],
+  "Katoka": ["Katoka I", "Katoka II", "Nganza", "Azda", "Snel", "Mpokolo"],
+  "Lula": ["Lula Centre", "Bianquet", "Tshinsambi", "Secteur", "Katambayi"],
+  "Nganza": ["Nganza I", "Nganza II", "Kamilabi", "Nkole", "Baluatshia"],
+  "Ndesha": ["Ndesha I", "Ndesha II", "Salongo", "Tshilumba", "Kamayi"]
 };
 
 export const defaultQuartiers = ["Quartier Centre-Ville", "Quartier Commercial", "Quartier Populaire", "Quartier Résidentiel", "Quartier Industriel"];
